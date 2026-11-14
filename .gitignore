@@ -1,0 +1,9 @@
+.env
+.speech-cache/
+__pycache__/
+node_modules/
+out/
+.DS_Store
+.venv/
+snapshots/
+examples/site-assistant.yaml

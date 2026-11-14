@@ -1,0 +1,172 @@
+# site-assistant.yaml: the owner's answers to the 22 setup questions, in four rounds.
+#
+# Ask every question before building anything (setup-01-questions does it in a terminal). Answers marked
+# [default: …] have a default the owner can accept; the others are the owner's own, so the values here are an
+# example for a fictional bakery. The setup-0x scripts read this file; setup-03 rebuilds the agent's instructions from all of it.
+
+# ── Round 1 · Who is speaking ───────────────────────────────────────────────────────────────────────────────
+
+# Q1. Brand in the third person ("we"), or a named person in the first person? [default: brand]
+persona:
+  voice: brand                  # brand | person
+  name: ""                      # the person's name, when voice is person
+
+# Q2. Name in the interface. (the owner's answer)
+name: Saltmarsh Bakery assistant  # the agent's name
+title: Ask Saltmarsh              # the widget's heading
+storeName: Saltmarsh Bakery       # the business it speaks for
+
+# Q3. Designed voice or clone? Consent, recordings, approval of the sample. [default: a public voice]
+voiceId: ""                     # Empty: setup-02 uses the first ready public voice
+voice:
+  kind: public                  # public | designed | clone
+  consent: false                # clone only: the speaker's permission is on file
+  recordings: []                # clone only: the recordings the sample is cut from
+  sampleApproved: false         # clone only: the owner has heard the cut sample and approved it
+
+# Q4. Words mispronounced and words misheard. (the owner's answer; [] for none)
+pronunciations:                 # speech says `sayAs` where the text has `word`
+  - word: Saltmarsh
+    sayAs: Salt-marsh
+vocabulary:                     # spelled exactly like this, and listened for
+  - sourdough
+  - spelt
+  - focaccia
+
+# ── Round 2 · What it knows ─────────────────────────────────────────────────────────────────────────────────
+
+# Q5. Where the content is; how often it changes; refresh on publish? [default: refresh on publish]
+knowledge:
+  source: site-setup/sample-site  # the site's built HTML pages, relative to where the scripts run
+  changes: weekly
+  refreshOnPublish: true
+
+# Q6. Pages it may point to, aliases, home, in-page anchors? (the owner's answer)
+routes:
+  - label: Home
+    path: /
+    aliases: [home page, start]
+    anchorsAllowed: false
+  - label: Our breads
+    path: /breads
+    aliases: [menu, bread list, prices]
+    anchorsAllowed: false
+  - label: Visit us
+    path: /visit
+    aliases: [opening hours, address, directions, dogs]
+    anchorsAllowed: false
+  - label: Contact
+    path: /contact
+    aliases: [email, phone, get in touch]
+    anchorsAllowed: false
+
+# Q7. Off limits, framing, redirects. (the owner's answer; [] for none)
+offLimits:
+  - medical or allergy advice beyond the ingredients on the site
+  - other bakeries
+redirects:
+  - topic: allergies
+    say: For allergy questions, please call us so a baker can check the recipe with you.
+    path: /contact
+  - topic: wholesale or catering orders
+    say: Wholesale and catering orders go through our contact page.
+    path: /contact
+
+# ── Round 3 · How it behaves ────────────────────────────────────────────────────────────────────────────────
+
+# Q8. House style: spelling, serial comma, brand spellings, tone. [default: British spelling, no serial comma, warm and plain]
+style:
+  spelling: British
+  serialComma: false
+  brandSpellings: [Saltmarsh Bakery]
+  tone: warm, plain and brief
+
+# Q9. Answer length for speech; longer allowed in text? [default: 35 words, 1–2 sentences; 80 words in text]
+answerStyle:
+  spokenMaxWords: 35
+  spokenMaxSentences: 2
+  textMaxWords: 80
+
+# Q10. Welcome lines; play on first tap; listen straight after? [default: yes, yes]
+welcomeMessage: Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.
+welcome:
+  playOnFirstTap: true
+  autoListen: true
+  back: ""                      # a welcome-back line needs your own login to know who is returning
+
+# Q11. Acknowledgement phrases. [default: 3–4 short ones]
+acknowledgements:
+  - One moment.
+  - Let me check.
+  - Good question, one second.
+
+# Q12. Offer to open the source page; navigate on request? [default: yes, yes]
+followUp:
+  offerNavigation: true
+navigation:
+  enabled: true
+
+# Q13. Turn-based or live call; acceptable latency; barge-in? [default: turn-based, 5 s, off]
+mode: turn                      # turn | live
+acceptableDelaySeconds: 5
+transportProviderId: ""         # Live calls only: the id of your saved live-call server
+bargeIn: false
+
+# Q14. Suggested prompts. (the owner's answer; 3 of them)
+prompts:
+  - What breads do you have?
+  - Are you open on Monday?
+  - Do you deliver?
+
+# Q15. What it cannot do; where a contact request goes. (the owner's answer)
+capabilities:
+  tools: []                     # built-in agent tools to switch on
+  cannot: [take orders or payments, reserve loaves]
+contact:
+  path: /contact
+  email: hello@example.com
+
+# ── Round 4 · Where it lives, money and data ────────────────────────────────────────────────────────────────
+
+# Q16. Placement: hero, dock, contact page, header? [default: all]
+placement: [hero, dock, contact, header]
+
+# Q17. Look: colours, type, light or dark, animation? [default: match the site]
+theme:
+  inherit: true                 # take colours and type from the host page's CSS
+  colorScheme: auto             # auto | light | dark
+  animation: true
+
+# Q18. Hosting and build; where environment variables go. (the owner's answer)
+hosting:
+  host: a Node server on the owner's VPS
+  build: npm run build
+  envVars: the server's .env file, never the browser bundle
+
+# Q19. Browsers and devices; which device the owner tests on. [default: current Chrome, Safari, Edge and Firefox; the owner's iPhone]
+devices:
+  browsers: [Chrome, Safari, Edge, Firefox]
+  ownerTestDevice: iPhone (Safari)
+
+# Q20. Credit budget per month and per visitor; what shows at the limit; rate limits? [default: 6 questions and 12 clips a minute]
+budget:
+  monthlyCredits: 50000
+  perVisitorCredits: 300
+  atLimitMessage: The assistant has reached its limit for now. Please use the contact page.
+rateLimits:
+  questionsPerMinute: 6
+  clipsPerMinute: 12
+
+# Q21. Keep transcripts? Analytics? Consent for the mic and storage? [default: keep 30 days, no analytics, ask for both]
+retention:
+  keepTranscripts: true
+  keepDays: 30
+  analytics: false
+  askMicConsent: true
+  askStorageConsent: true
+
+# Q22. Who is told when it fails, and how? (the owner's answer)
+alerts:
+  who: [owner@example.com]
+  how: email                    # email | webhook
+  webhookUrl: ""
