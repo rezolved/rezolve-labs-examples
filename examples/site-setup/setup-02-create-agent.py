@@ -20,7 +20,7 @@ for line in ENV.read_text().splitlines() if ENV.exists() else []:
         os.environ.setdefault(k.strip(), v.strip())
 KEY = os.environ.get("LABS_API_KEY") or sys.exit("Set LABS_API_KEY in .env (copy env.example).")
 API = os.environ.get("LABS_BASE_URL") or "https://api.rezolvelabs.com/api/v1"
-UA = "labs-playbook-examples/1.0"  # any explicit User-Agent works; Python's default gets 503 upstream_edge_block
+UA = "labs-playbook-examples/1.0"  # every call sends an explicit User-Agent
 ANSWERS = pathlib.Path("site-assistant.yaml")
 if not ANSWERS.exists():
     ANSWERS = pathlib.Path(__file__).parent / "site-assistant.example.yaml"

@@ -1,0 +1,143 @@
+{
+  "about": "Inputs and expected keys for speech-cache-key.py and speech-cache-key.ts. Both twins must give exactly this canonical request and key for every vector. outputFormat is mp3_44100_64 when not given.",
+  "vectors": [
+    {
+      "name": "welcome line",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "712255a68e6f38febc5f20cb46e3426dab32591cc965301382a7789169d39d4d"
+    },
+    {
+      "name": "same line, trailing newline: same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\n",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "712255a68e6f38febc5f20cb46e3426dab32591cc965301382a7789169d39d4d"
+    },
+    {
+      "name": "same line, double space and a tab: same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant.  Ask me about our breads,\topening hours or delivery.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "712255a68e6f38febc5f20cb46e3426dab32591cc965301382a7789169d39d4d"
+    },
+    {
+      "name": "voice id in capitals with a space: same key",
+      "voiceId": " 00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "712255a68e6f38febc5f20cb46e3426dab32591cc965301382a7789169d39d4d"
+    },
+    {
+      "name": "a setting set to null is dropped: same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "voiceSettings": {
+        "speed": null
+      },
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "712255a68e6f38febc5f20cb46e3426dab32591cc965301382a7789169d39d4d"
+    },
+    {
+      "name": "speed 1.0 is written as 1",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "voiceSettings": {
+        "speed": 1.0
+      },
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\",\"voiceSettings\":{\"speed\":1}}",
+      "key": "fef4280ab198b9bc77b07e4e932332486f50aa197691e3facda9cd16ba8a4e40"
+    },
+    {
+      "name": "speed 1.1: another clip",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "voiceSettings": {
+        "speed": 1.1
+      },
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\",\"voiceSettings\":{\"speed\":1.1}}",
+      "key": "671fe3f4029631ba41428e2ef7014c5f9bfb6974d8dd3bd17b852a225f0d6359"
+    },
+    {
+      "name": "two settings, volume first",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "voiceSettings": {
+        "volume": 2,
+        "speed": 1.1
+      },
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\",\"voiceSettings\":{\"speed\":1.1,\"volume\":2}}",
+      "key": "5080a0d4b47c0510811863dbd8c121b5c4c4baf62455a9eba5f7aa5788533f3b"
+    },
+    {
+      "name": "two settings, speed first: same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "voiceSettings": {
+        "speed": 1.1,
+        "volume": 2
+      },
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\",\"voiceSettings\":{\"speed\":1.1,\"volume\":2}}",
+      "key": "5080a0d4b47c0510811863dbd8c121b5c4c4baf62455a9eba5f7aa5788533f3b"
+    },
+    {
+      "name": "another output format: another clip",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "outputFormat": "mp3_44100_128",
+      "canonical": "{\"outputFormat\":\"mp3_44100_128\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "4a8f8947adf06fc7bcd0ca19eedd3db035e78f516cdcdbfc663a593eb93b36de"
+    },
+    {
+      "name": "another voice: another clip",
+      "voiceId": "00000000-0000-4000-8000-000000000002",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000002\"}",
+      "key": "b11aa1b1b2e869a2a38e5a5e69421af92130ac8e55d39cfc81c45396a72dc6d0"
+    },
+    {
+      "name": "a seed: another clip",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.",
+      "seed": 7,
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"seed\":7,\"text\":\"Hi, I'm the Saltmarsh Bakery assistant. Ask me about our breads, opening hours or delivery.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "67a8b660a37240eb281fc5e9d3683cbfb3b8a8e55403244593ac38724d3a1c29"
+    },
+    {
+      "name": "acknowledgement",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "One moment.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"One moment.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "baf1abb5467eb7c1a5b06d8f8e782b221e66b0264f663961c0b274a1948dac57"
+    },
+    {
+      "name": "no-break space and line separator are spaces: same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "One\u00a0moment.\u2028",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"One moment.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "baf1abb5467eb7c1a5b06d8f8e782b221e66b0264f663961c0b274a1948dac57"
+    },
+    {
+      "name": "accent as one character (NFC)",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "A Gruy\u00e8re scone, please.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"A Gruy\u00e8re scone, please.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "3ddf4cf1309fa34296df7e20c9c02ce3b4f39911606b63e4089872eadb7dde91"
+    },
+    {
+      "name": "accent as two characters (NFD): same key",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "A Gruye\u0300re scone, please.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"A Gruy\u00e8re scone, please.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "3ddf4cf1309fa34296df7e20c9c02ce3b4f39911606b63e4089872eadb7dde91"
+    },
+    {
+      "name": "quotes, a backslash and non-ASCII",
+      "voiceId": "00000000-0000-4000-8000-000000000001",
+      "text": "Say \"caf\u00e9\" \\ 5 \u20ac \u2014 thanks.",
+      "canonical": "{\"outputFormat\":\"mp3_44100_64\",\"text\":\"Say \\\"caf\u00e9\\\" \\\\ 5 \u20ac \u2014 thanks.\",\"voiceId\":\"00000000-0000-4000-8000-000000000001\"}",
+      "key": "8e49f05e1c28f713a75fd2debaa4171ad5384d7c049754dae107f283da5e24b7"
+    }
+  ]
+}

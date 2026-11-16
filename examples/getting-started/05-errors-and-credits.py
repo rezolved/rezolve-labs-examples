@@ -1,7 +1,7 @@
 """05 · Errors and credits.
 
-Makes one real answer and forces three refusals: a bad key (401), the edge block on Python's default
-User-Agent (503) and the rate limit (429, from a burst of free calls). `verdict()` turns each into what a site
+Makes one real answer and forces two refusals: a bad key (401) and the rate limit (429, from a burst of free
+calls). `verdict()` turns each into what a site
 should do, including a 402 (out of credits) and the platform's fallback sentence, which arrives as an ordinary
 answer. Then it reads the balance and today's usage (both free) and checks them against X-Credits-Charged.
 If ALERT_WEBHOOK_URL is set, every failure that needs a person is posted to it as {"text": ...}.
@@ -22,16 +22,14 @@ for d in pathlib.Path(__file__).resolve().parents:  # the nearest .env above thi
 KEY = os.environ.get("LABS_API_KEY") or sys.exit("Set LABS_API_KEY in .env (copy env.example).")
 API = os.environ.get("LABS_BASE_URL") or "https://api.rezolvelabs.com/api/v1"
 AGENT = os.environ.get("LABS_AGENT_ID") or sys.exit("Set LABS_AGENT_ID in .env (site-setup/setup-02-create-agent makes one).")
-UA = "labs-playbook-examples/1.0"  # any explicit User-Agent works; Python's default gets 503 upstream_edge_block
+UA = "labs-playbook-examples/1.0"  # every call sends an explicit User-Agent
 FALLBACK = "Sorry, I couldn't put a reply together"  # how the platform's fallback sentence starts
 
 
-def labs(method, path, body=None, stream=False, key=KEY, ua=UA):
+def labs(method, path, body=None, stream=False, key=KEY):
     """One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors.
     With stream=True a successful answer comes back unread, so its events can be taken as they arrive."""
-    headers = {"X-API-KEY": key, "Content-Type": "application/json"}
-    if ua:
-        headers["User-Agent"] = ua
+    headers = {"X-API-KEY": key, "Content-Type": "application/json", "User-Agent": UA}
     req = urllib.request.Request(API + path, method=method, headers=headers,
                                  data=None if body is None else json.dumps(body).encode())
     try:
@@ -156,11 +154,10 @@ if status == 200:
             failed = True
 record("answer", status, headers, b"" if status == 200 else resp, reply, failed)
 
-# 2. A bad key, and 3. Python's default User-Agent (ua=None sends urllib's own).
+# 2. A bad key.
 record("bad key", *labs("GET", "/voice-audio/voices/list?pageSize=1", key="rzlb_live_sk_not_a_real_key"))
-record("edge block", *labs("GET", "/voice-audio/voices/list?pageSize=1", ua=None))
 
-# 4. The rate limit: free calls, 32 at a time, until the first 429.
+# 3. The rate limit: free calls, 32 at a time, until the first 429.
 stop = threading.Event()
 
 
