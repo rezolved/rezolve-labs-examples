@@ -77,6 +77,31 @@ Without a `site-assistant.yaml` in `examples/`, the setup scripts use `site-setu
 | `clone-03-report` | A report on the sample for the owner to approve | `out/voice-clone/` |
 | `clone-04-create` | Clones the voice (`--consent`) and speaks test lines in it | a cloned voice |
 
+### `site-assistant/`: the assistant on a website (your server and your browser code)
+
+| Path | Shows |
+|---|---|
+| `CONTRACT.md` | The calls the browser makes to your server, their events and error codes |
+| `server-python/`, `server-node/` | The contract twice: holds the key, checks origins, limits each visitor and the site, keeps to the budget, relays chat, speech and the microphone |
+| `contract-test.py` | Checks either server through the contract only |
+| `client/` | The browser widget (TypeScript): placement, text in step with the voice, microphone, tap to interrupt, navigation. Build with `npx tsc -p site-assistant/client` |
+
+```bash
+npx tsc -p site-assistant/client                      # builds client/dist/
+uv run python site-assistant/server-python/server.py  # or: npx tsx site-assistant/server-node/server.ts
+```
+
+Then open `http://localhost:8040`: the sample site with the assistant on it.
+
+### `live-call/`: a live voice call with the agent
+
+| Path | Shows |
+|---|---|
+| `server.py` | Starts the call with the key and hands the page only what it needs; reads the transcript back |
+| `client/` | The call page (TypeScript): microphone closed while the agent speaks, tap to interrupt. Build with `npx tsc -p live-call/client` |
+
+Live calls need your own LiveKit server saved in the workspace once.
+
 ## From nothing to a talking agent
 
 ```bash

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live call</title>
+  <!-- livekit-client from a CDN, pinned to one version. app.js imports it by name. -->
+  <script type="importmap">
+    { "imports": { "livekit-client": "https://cdn.jsdelivr.net/npm/livekit-client@2.23.0/+esm" } }
+  </script>
+  <script type="module" src="/app.js"></script>
+  <style>
+    :root { color-scheme: light dark; --accent: #0b6e4f; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem; }
+    button { font: inherit; padding: 0.6rem 1.2rem; border-radius: 2rem; border: 1px solid var(--accent); cursor: pointer; }
+    #call { background: var(--accent); color: #fff; }
+    #state { font-weight: 600; }
+    body[data-state="speaking"] #state { color: var(--accent); }
+    ol { padding-left: 1.2rem; }
+    li[data-who="caller"], li[data-who="user"] { opacity: 0.7; }
+  </style>
+</head>
+<body data-state="idle">
+  <main>
+    <h1>Talk to the assistant</h1>
+    <p id="state" role="status">Ready</p>
+    <button id="call">Start a call</button>
+    <button id="interrupt" hidden>Tap to interrupt</button>
+    <button id="hangup" hidden>Hang up</button>
+    <h2>Captions</h2>
+    <ol id="captions" aria-live="polite"></ol>
+    <h2>Transcript</h2>
+    <ol id="transcript"></ol>
+  </main>
+</body>
+</html>
