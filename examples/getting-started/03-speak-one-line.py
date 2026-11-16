@@ -18,7 +18,7 @@ for d in pathlib.Path(__file__).resolve().parents:  # the nearest .env above thi
         break
 KEY = os.environ.get("LABS_API_KEY") or sys.exit("Set LABS_API_KEY in .env (copy env.example).")
 API = os.environ.get("LABS_BASE_URL") or "https://api.rezolvelabs.com/api/v1"
-UA = "labs-playbook-examples/1.0"  # any explicit User-Agent works; Python's default gets 503 upstream_edge_block
+UA = "labs-playbook-examples/1.0"  # every call sends an explicit User-Agent
 
 
 def labs(method, path, body=None):

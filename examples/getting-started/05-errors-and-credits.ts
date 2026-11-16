@@ -1,8 +1,8 @@
 /**
  * 05 · Errors and credits.
  *
- * Makes one real answer and forces three refusals: a bad key (401), the edge block on Python's default
- * User-Agent (503) and the rate limit (429, from a burst of free calls). `verdict()` turns each into what a site
+ * Makes one real answer and forces two refusals: a bad key (401) and the rate limit (429, from a burst of free
+ * calls). `verdict()` turns each into what a site
  * should do, including a 402 (out of credits) and the platform's fallback sentence, which arrives as an ordinary
  * answer. Then it reads the balance and today's usage (both free) and checks them against X-Credits-Charged.
  * If ALERT_WEBHOOK_URL is set, every failure that needs a person is posted to it as {"text": ...}.
@@ -21,7 +21,6 @@ const KEY = process.env.LABS_API_KEY || fail("Set LABS_API_KEY in .env (copy env
 const API = process.env.LABS_BASE_URL || "https://api.rezolvelabs.com/api/v1";
 const AGENT = process.env.LABS_AGENT_ID || fail("Set LABS_AGENT_ID in .env (site-setup/setup-02-create-agent makes one).");
 const UA = "labs-playbook-examples/1.0"; // any explicit User-Agent works
-const PYTHON_DEFAULT_UA = "Python-urllib/3.13"; // the edge refuses this User-Agent (Node's own default passes)
 const FALLBACK = "Sorry, I couldn't put a reply together"; // how the platform's fallback sentence starts
 
 function fail(message: string): never {
@@ -32,10 +31,10 @@ function fail(message: string): never {
 type Answer = { status: number; headers: Headers; body: string };
 
 /** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. */
-async function labs(method: string, path: string, body?: unknown, key = KEY, ua = UA): Promise<Response> {
+async function labs(method: string, path: string, body?: unknown, key = KEY): Promise<Response> {
   const res = await fetch(API + path, {
     method,
-    headers: { "X-API-KEY": key, "Content-Type": "application/json", "User-Agent": ua },
+    headers: { "X-API-KEY": key, "Content-Type": "application/json", "User-Agent": UA },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   let line = `[labs] ${method} ${path} -> ${res.status} credits=${res.headers.get("X-Credits-Charged") ?? "-"}`;
@@ -45,8 +44,8 @@ async function labs(method: string, path: string, body?: unknown, key = KEY, ua 
 }
 
 /** labs(), with the body read: for calls whose answer is short JSON. */
-async function read(method: string, path: string, body?: unknown, key = KEY, ua = UA): Promise<Answer> {
-  const res = await labs(method, path, body, key, ua);
+async function read(method: string, path: string, body?: unknown, key = KEY): Promise<Answer> {
+  const res = await labs(method, path, body, key);
   return { status: res.status, headers: res.headers, body: await res.text() };
 }
 
@@ -140,11 +139,10 @@ if (res.status === 200) {
 }
 await record("answer", { status: res.status, headers: res.headers, body: res.status === 200 ? "" : await res.text() }, reply, failed);
 
-// 2. A bad key, and 3. Python's default User-Agent.
+// 2. A bad key.
 await record("bad key", await read("GET", "/voice-audio/voices/list?pageSize=1", undefined, "rzlb_live_sk_not_a_real_key"));
-await record("edge block", await read("GET", "/voice-audio/voices/list?pageSize=1", undefined, KEY, PYTHON_DEFAULT_UA));
 
-// 4. The rate limit: free calls, 32 at a time, until the first 429.
+// 3. The rate limit: free calls, 32 at a time, until the first 429.
 const burst: Answer[] = [];
 let stop = false;
 await Promise.all(Array.from({ length: 32 }, async () => {
