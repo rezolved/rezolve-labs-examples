@@ -3,4 +3,7 @@ name = "labs-playbook-examples"
 version = "0.1.0"
 description = "Runnable examples for the Rezolve Labs site-assistant playbook"
 requires-python = ">=3.11"
-dependencies = ["pyyaml>=6"]
+dependencies = [
+    "aiohttp>=3.9",
+    "pyyaml>=6",
+]
