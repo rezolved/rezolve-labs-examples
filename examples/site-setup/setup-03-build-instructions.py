@@ -5,7 +5,8 @@ persona (Q1), business (Q2), spellings (Q4, Q8), off-limits topics and redirects
 length (Q9), what it cannot do and the contact page (Q15), and the pages it may point to (Q6, Q12), which end an
 answer with a plain "Read more: /path" line. Checks the 20,000-character limit, then saves the text as the
 prompt of the agent's flow: an agent's instructions can't be changed with PATCH. The save is a new flow
-version, live for new and open chats at once; there is no publish step (setup-05 saves one to roll back to).
+version, live at once; there is no publish step (setup-05 saves one to roll back to). An open chat may keep the
+old instructions, so test each change in a new chat.
 
 Run: uv run python site-setup/setup-03-build-instructions.py [--dry-run]   (--dry-run prints the text only)
 """
@@ -118,4 +119,4 @@ for attempt in (1, 2):  # a 409 means someone saved since we read: read again an
         break
 if status != 200:
     sys.exit("The instructions were not saved: see the body above.")
-print(f"saved:    flow version {json.loads(body)['data']['version']}, live for new and open chats now")
+print(f"saved:    flow version {json.loads(body)['data']['version']}, live now: test it in a new chat")

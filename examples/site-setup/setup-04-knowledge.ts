@@ -93,29 +93,29 @@ console.log(`pages:    ${files.length} from ${source}: ${rows.slice(1).map((r) =
 
 let kb = process.env.LABS_KB_ID;
 if (!kb) {
-  kb = (await data_of(labs("POST", "/developer-platform/knowledge-bases", { name: `${site.storeName} site pages` }),
+  kb = (await data_of(labs("POST", "/unstructured-data/knowledge-bases", { name: `${site.storeName} site pages` }),
     "Could not create the knowledge base")).id as string;
   setEnv("LABS_KB_ID", kb);
   console.log(`created:  knowledge base ${kb}, saved as LABS_KB_ID in ${basename(ENV)}`);
 }
-const listed = await data_of(labs("GET", `/developer-platform/knowledge-bases/${kb}/documents?pageSize=100`), "Could not list the documents");
+const listed = await data_of(labs("GET", `/unstructured-data/knowledge-bases/${kb}/documents?pageSize=100`), "Could not list the documents");
 const older: string[] = listed.items.map((d: any) => d.id);
 
 const form = new FormData();
 form.append("file", new Blob([data], { type: "text/csv" }), "site-pages.csv");
-const uploaded = await labs("POST", `/developer-platform/knowledge-bases/${kb}/documents`, form);
+const uploaded = await labs("POST", `/unstructured-data/knowledge-bases/${kb}/documents`, form);
 if (uploaded.status !== 202) fail("The upload was refused: see the body above.");
 const doc: string = (await uploaded.json()).data.id;
 const started = Date.now();
 let state: any;
 for (;;) { // accepted is not searchable: wait for `ready`
-  state = await data_of(labs("GET", `/developer-platform/knowledge-bases/${kb}/documents/${doc}`), "Could not read the document");
+  state = await data_of(labs("GET", `/unstructured-data/knowledge-bases/${kb}/documents/${doc}`), "Could not read the document");
   if (state.status === "ready" || state.status === "failed") break;
   await new Promise((r) => setTimeout(r, 5000));
 }
 if (state.status === "failed") fail(`Indexing failed (${state.error}); the previous pages are still in place.`);
 console.log(`ready:    document ${doc} after ${Math.round((Date.now() - started) / 1000)} s`);
-for (const old of older) await labs("DELETE", `/developer-platform/knowledge-bases/${kb}/documents/${old}`);
+for (const old of older) await labs("DELETE", `/unstructured-data/knowledge-bases/${kb}/documents/${old}`);
 console.log(`removed:  ${older.length} older document(s)`);
 
 const agent = await data_of(labs("GET", `/developer-platform/agents/${AGENT}`), "Could not read the agent");

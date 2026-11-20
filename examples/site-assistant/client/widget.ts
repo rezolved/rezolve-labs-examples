@@ -399,12 +399,13 @@ class Widget {
     try {
       if (!(await this.micConsent())) return this.note("The microphone is off. You can type your question.");
       await this.welcoming;
-      let silent = 0;
+      let silent = 0, again = false;
       while (loop === this.loop) {
         const live = this.bubble("user");
         live.classList.add("sa-live");
         this.listening = new AbortController();
         this.setState("listening");
+        if (again) this.note("I didn't hear anything. Listening again.");
         let heard: Heard;
         try {
           heard = await listen({
@@ -419,11 +420,11 @@ class Widget {
           this.listening = null;
           live.remove();
         }
-        if (loop !== this.loop) return; // the panel was closed: drop what was heard
         this.setState("idle");
+        if (loop !== this.loop) return; // the panel was closed: drop what was heard
+        again = !heard.text;
         if (!heard.text) {
           if (heard.ended === "tapped" || ++silent >= 2) return this.note("Tap the microphone to talk again.");
-          this.note("I didn't hear anything. Listening again.");
           continue;
         }
         silent = 0;

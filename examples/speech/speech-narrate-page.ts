@@ -50,6 +50,17 @@ async function labs(method: string, path: string, body?: unknown): Promise<Respo
   return res;
 }
 
+/** labs() that tries again after a 429 (waiting Retry-After) or a 5xx (after 1, 2, 4 and 8 s). Neither is charged. */
+async function retrying(method: string, path: string, body?: unknown): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await labs(method, path, body);
+    const wait = res.status === 429 ? Number(res.headers.get("Retry-After") ?? 1)
+      : res.status >= 500 && attempt < 4 ? 2 ** attempt : 0;
+    if (!wait || attempt >= 29) return res;
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
+}
+
 /** The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why). */
 async function data_of(res: Response | Promise<Response>, what: string): Promise<any> {
   const answer = await res;
@@ -130,7 +141,7 @@ function partsOf(text: string, most: number): string[] {
   return current ? [...parts, current] : parts;
 }
 
-/** The clip without the ID3 tag at its start. Every clip has one; joined clips keep only the first. */
+/** The clip without the ID3 tag at its start, if it has one: joined clips keep only the first. */
 function withoutTag(clip: Buffer): Buffer {
   if (clip.subarray(0, 3).toString("latin1") !== "ID3") return clip;
   const size = (clip[6] << 21) | (clip[7] << 14) | (clip[8] << 7) | clip[9]; // 7 bits a byte
@@ -145,7 +156,7 @@ async function speak(voice: any, part: string): Promise<[Buffer, number]> {
   for (let attempt = 1; attempt <= TRIES; attempt++) {
     const body: Record<string, unknown> = { text: part, outputFormat: FORMAT };
     if (attempt > 1 && voice.supportedSettings?.seed) body.seed = attempt;
-    const res = await labs("POST", `/voice-audio/voices/${voice.id}/speech`, body);
+    const res = await retrying("POST", `/voice-audio/voices/${voice.id}/speech`, body);
     if (res.status !== 200) fail("A part was refused: see the body above. No audio was saved.");
     credits += Number(res.headers.get("X-Credits-Charged") ?? 0);
     clip = Buffer.from(await res.arrayBuffer());

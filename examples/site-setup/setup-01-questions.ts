@@ -78,11 +78,14 @@ function show(value: any): string {
 /** Reads an answer as the same kind of value as `like` (the default or the example). */
 function parse(text: string, like: unknown): unknown {
   if (typeof like === "boolean") return ["y", "yes", "true"].includes(text.toLowerCase());
-  if (typeof like === "number") return parseInt(text, 10);
+  if (typeof like === "number") {
+    if (!/^[0-9]+$/.test(text)) throw new RangeError("a whole number");
+    return Number(text);
+  }
   if (Array.isArray(like) && !text.startsWith("[")) {
     return text.toLowerCase() === "none" ? [] : text.split(",").map((p) => p.trim()).filter(Boolean);
   }
-  return like !== null && typeof like === "object" ? YAML.parse(text) : text;
+  return like !== null && typeof like === "object" ? YAML.parse(text, { version: "1.1" }) : text;
 }
 
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
@@ -120,7 +123,13 @@ if (!process.argv.includes("--defaults")) {
             console.error(`Q${n} (${path}) needs the owner's answer.`);
             process.exit(1);
           }
-          if (input) put(answers, path, parse(input, current));
+          try {
+            if (input) put(answers, path, parse(input, current));
+          } catch (e) {
+            if (!(e instanceof RangeError)) throw e;
+            console.log("  Please answer with a whole number.");
+            continue;
+          }
           if (input || !own) break;
         }
       }

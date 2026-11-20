@@ -66,7 +66,8 @@ async function* events(res: Response): AsyncGenerator<[string, any]> {
 function verdict(status: number, headers: Headers, body: string, reply = "", failed = false): [string, string] {
   let err: any = {};
   try { if (status >= 400) err = JSON.parse(body); } catch { /* not JSON */ }
-  const code: string = err.code ?? "-";
+  const code: string = err.code ?? err.errors?.[0]?.code ?? "-"; // a 404 lists its code in `errors`
+  const detail: string = err.detail ?? err.message ?? "";
   if (status < 300) {
     if (failed) return ["-", "the turn failed part-way: show your own message, don't count it as an answer"];
     if (reply.startsWith(FALLBACK)) return ["-", "fallback sentence: show your own message, don't count it as an answer"];
@@ -75,12 +76,12 @@ function verdict(status: number, headers: Headers, body: string, reply = "", fai
   if (status === 401) return [code, "bad key: check LABS_API_KEY"];
   if (status === 402 && code === "call_over_plan_limit") return [code, "costs more than the plan allows in one call: only a bigger plan helps"];
   if (status === 402) return [code, "out of credits: stop calling, tell the owner, show your limit message"];
-  if (status === 403) return [code, `refused: ${err.detail ?? ""}`];
+  if (status === 403) return [code, `refused: ${detail}`];
   if (status === 425) return [code, "knowledge base still indexing: wait until its documents are ready, then retry"];
   if (status === 429) return [code, `rate limited: wait ${headers.get("Retry-After") ?? "1"} s, then retry`];
   if (code === "upstream_edge_block") return [code, "edge block: send an explicit User-Agent; retrying won't help"];
   if (status >= 500) return [code, "service error: retry with a growing delay (never charged)"];
-  return [code, `request refused, fix it: ${err.detail ?? ""}`];
+  return [code, `request refused, fix it: ${detail}`];
 }
 
 /** Posts {"text": ...} to ALERT_WEBHOOK_URL, if one is set. */

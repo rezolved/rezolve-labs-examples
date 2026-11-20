@@ -60,7 +60,8 @@ def verdict(status, headers, body, reply="", failed=False):
         err = json.loads(body) if status >= 400 else {}
     except ValueError:
         err = {}
-    code = err.get("code", "-")
+    code = err.get("code") or (err.get("errors") or [{}])[0].get("code", "-")  # a 404 lists its code in `errors`
+    detail = err.get("detail") or err.get("message", "")
     if status < 300:
         if failed:
             return "-", "the turn failed part-way: show your own message, don't count it as an answer"
@@ -74,7 +75,7 @@ def verdict(status, headers, body, reply="", failed=False):
     if status == 402:
         return code, "out of credits: stop calling, tell the owner, show your limit message"
     if status == 403:
-        return code, f"refused: {err.get('detail', '')}"
+        return code, f"refused: {detail}"
     if status == 425:
         return code, "knowledge base still indexing: wait until its documents are ready, then retry"
     if status == 429:
@@ -83,7 +84,7 @@ def verdict(status, headers, body, reply="", failed=False):
         return code, "edge block: send an explicit User-Agent; retrying won't help"
     if status >= 500:
         return code, "service error: retry with a growing delay (never charged)"
-    return code, f"request refused, fix it: {err.get('detail', '')}"
+    return code, f"request refused, fix it: {detail}"
 
 
 def alert(text):

@@ -13,7 +13,7 @@ Uses LABS_VOICE_ID, or else the first ready public voice. --max N sets the longe
 
 Run: uv run python speech/speech-narrate-page.py [file or URL] [--max N]
 """
-import hashlib, json, os, pathlib, re, sys, urllib.error, urllib.request
+import hashlib, json, os, pathlib, re, sys, time, urllib.error, urllib.request
 
 sys.stdout.reconfigure(line_buffering=True)
 for d in pathlib.Path(__file__).resolve().parents:  # the nearest .env above this file
@@ -46,6 +46,19 @@ def labs(method, path, body=None):
           + ("" if resp.status < 400 else " body=" + data.decode(errors="replace")[:300].replace("\n", " ")))
     return resp.status, resp.headers, data
 
+
+def retrying(method, path, body=None):
+    """labs() that tries again after a 429 (waiting Retry-After) or a 5xx (after 1, 2, 4 and 8 s). Neither is charged."""
+    for attempt in range(30):
+        status, headers, data = labs(method, path, body)
+        if status == 429:
+            wait = int(headers.get("Retry-After", "1"))
+        elif status >= 500 and attempt < 4:
+            wait = 2 ** attempt
+        else:
+            break
+        time.sleep(wait)
+    return status, headers, data
 
 def data_of(answer, what):
     """The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why)."""
@@ -129,7 +142,7 @@ def parts_of(text, most):
 
 
 def without_tag(clip):
-    """The clip without the ID3 tag at its start. Every clip has one; joined clips keep only the first."""
+    """The clip without the ID3 tag at its start, if it has one: joined clips keep only the first."""
     if clip[:3] != b"ID3":
         return clip
     size = clip[6] << 21 | clip[7] << 14 | clip[8] << 7 | clip[9]  # 7 bits a byte
@@ -144,7 +157,7 @@ def speak(voice, part):
         body = {"text": part, "outputFormat": FORMAT}
         if attempt > 1 and (voice.get("supportedSettings") or {}).get("seed"):
             body["seed"] = attempt
-        status, headers, clip = labs("POST", f"/voice-audio/voices/{voice['id']}/speech", body)
+        status, headers, clip = retrying("POST", f"/voice-audio/voices/{voice['id']}/speech", body)
         if status != 200:
             sys.exit("A part was refused: see the body above. No audio was saved.")
         credits += int(headers.get("X-Credits-Charged") or 0)

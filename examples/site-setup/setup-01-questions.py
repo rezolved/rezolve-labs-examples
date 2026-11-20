@@ -83,6 +83,8 @@ def parse(text, like):
     if isinstance(like, bool):
         return text.lower() in ("y", "yes", "true")
     if isinstance(like, int):
+        if not (text.isascii() and text.isdigit()):
+            raise ValueError("a whole number")
         return int(text)
     if isinstance(like, list) and not text.startswith("["):
         return [] if text.lower() == "none" else [part.strip() for part in text.split(",") if part.strip()]
@@ -121,8 +123,12 @@ def main():
                         text_in = ask(f"  Q{n} {path} [{'' if own else show(current)}]: ")
                         if text_in is None and own:
                             sys.exit(f"Q{n} ({path}) needs the owner's answer.")
-                        if text_in:
-                            put(answers, path, parse(text_in, current))
+                        try:
+                            if text_in:
+                                put(answers, path, parse(text_in, current))
+                        except ValueError:
+                            print("  Please answer with a whole number.")
+                            continue
                         if text_in or not own:
                             break
     OUT.write_text("# The owner's answers to the 22 questions (site-setup/setup-01-questions).\n"

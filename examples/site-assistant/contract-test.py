@@ -193,7 +193,7 @@ with urllib.request.urlopen(req, timeout=120) as r:
     live = head + r.read()
     seen.append(f"{r.status} {dict(r.headers)}".encode())
     check("speech live", r.status == 200 and r.headers.get("X-Clip") == "live" and r.headers.get("Content-Length") is None
-          and r.headers.get("Content-Type") == "audio/mpeg" and live[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3"),
+          and r.headers.get("Content-Type") == "audio/mpeg" and (live[:3] == b"ID3" or live[:2] in (b"\xff\xfb", b"\xff\xf3")),
           f"first sentence: X-Clip live, audio/mpeg, no Content-Length, {r.headers.get('Cache-Control')}")
 note(f"live clip: first byte {ttfb:.2f}s, {len(live)} bytes in {time.time() - t0:.2f}s")
 
@@ -213,7 +213,8 @@ status, ev4 = ask("Do you deliver?", chat_id)
 again = http("POST", "/api/cancel", {"chatId": chat_id})
 check("after cancel", status == 200 and ev4[-1][2] == {"cancelled": False} and json.loads(again[2]) == {"cancelled": False},
       f"the next question on the same chat waits for the cancelled reply, then {shape(ev4)}; cancel now {{cancelled: false}}")
-note(f"next answer: done at {ev4[-1][0]:.1f}s")
+if ev4:
+    note(f"next answer: done at {ev4[-1][0]:.1f}s")
 t = http("GET", "/api/transcript?chatId=" + urllib.parse.quote(chat_id))
 cancelled_reply = json.loads(t[2])["turns"][5]["text"] if t[0] == 200 else ""
 whole = len(re.findall(r"[.!?](?:\s|$)", cancelled_reply))  # sentence ends
@@ -271,6 +272,14 @@ async def listen_checks():
         check("listen twice", [g.get("code") for g in second] == ["slow_down"] and code2 == 1008,
               f"a second session while one is open: {[g.get('code') for g in second]}, close {code2}")
 
+        async with session.ws_connect(ws_url, headers={"Origin": ORIGIN}) as ws:  # as the widget ends a silent turn
+            await ws.send_str(json.dumps({"type": "start", "sampleRate": 16000}))
+            await ws.receive()
+            await ws.send_str(json.dumps({"type": "stop"}))
+        got, code = await run({"type": "start", "sampleRate": 16000}, bytes(32000))
+        check("listen again", [g["type"] for g in got][:1] == ["ready"] and code == 1000,
+              f"a new session as soon as the last one's socket closed: {[g['type'] for g in got][:1]}, close {code}")
+
         got, code = await run({"type": "start", "sampleRate": 16000}, bytes(70_000), frame=70_000)
         check("listen frame", [g.get("code") for g in got if g["type"] == "error"] == ["too_long"] and code == 1009,
               f"a 70,000-byte frame: {[g.get('code') for g in got if g['type'] == 'error']}, close {code}")
@@ -301,10 +310,14 @@ check("question limit", limited == 429 and asked == per_minute and error_code(r)
 with ThreadPoolExecutor(16) as pool:
     clips = list(pool.map(lambda n: http("GET", f"/api/speech?text=Thank+you+{n}.", headers=audio_ref), range(16)))
 live_ok = sum(a[0] == 200 for a in clips)
-check("clip limit", live_ok + 1 == settings["limits"]["clipsPerMinute"] and all(error_code(a) == "slow_down" for a in clips if a[0] != 200),
-      f"16 live clips at once after 1: {live_ok} made, the rest 429 slow_down")
-cached_still = http("GET", "/api/speech?text=" + urllib.parse.quote(site["welcomeMessage"]), headers=audio_ref)
-check("cached is free", cached_still[0] == 200, f"a cached clip once the live limit is reached: {cached_still[0]}")
+live_before = 1 if welcome else 2  # the first sentence, and the welcome too when it has no clip
+check("clip limit", live_ok + live_before == settings["limits"]["clipsPerMinute"] and all(error_code(a) == "slow_down" for a in clips if a[0] != 200),
+      f"16 live clips at once after {live_before}: {live_ok} made, the rest 429 slow_down")
+if welcome:
+    cached_still = http("GET", "/api/speech?text=" + urllib.parse.quote(site["welcomeMessage"]), headers=audio_ref)
+    check("cached is free", cached_still[0] == 200, f"a cached clip once the live limit is reached: {cached_still[0]}")
+else:
+    note("cached is free: not checked, there are no clips made in advance (out/clips/manifest.json)")
 
 # ── Other instances ──────────────────────────────────────────────────────────────────────────────────────────────
 if bad_key := opt("--bad-key"):

@@ -6,7 +6,8 @@
  * length (Q9), what it cannot do and the contact page (Q15), and the pages it may point to (Q6, Q12), which end an
  * answer with a plain "Read more: /path" line. Checks the 20,000-character limit, then saves the text as the
  * prompt of the agent's flow: an agent's instructions can't be changed with PATCH. The save is a new flow
- * version, live for new and open chats at once; there is no publish step (setup-05 saves one to roll back to).
+ * version, live at once; there is no publish step (setup-05 saves one to roll back to). An open chat may keep the
+ * old instructions, so test each change in a new chat.
  *
  * Run: npx tsx site-setup/setup-03-build-instructions.ts [--dry-run]   (--dry-run prints the text only)
  */
@@ -117,4 +118,4 @@ for (const attempt of [1, 2]) { // a 409 means someone saved since we read: read
   if (res.status !== 409 || attempt === 2) break;
 }
 if (res.status !== 200) fail("The instructions were not saved: see the body above.");
-console.log(`saved:    flow version ${(await res.json()).data.version}, live for new and open chats now`);
+console.log(`saved:    flow version ${(await res.json()).data.version}, live now: test it in a new chat`);

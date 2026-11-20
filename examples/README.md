@@ -1,6 +1,6 @@
 # Examples
 
-Runnable code for every page in [`docs/`](../docs/). Each file runs on its own and shows one idea; the docs quote
+Runnable code for every page of the [site assistant playbook](https://rezolvelabs.com/docs/getting-started/playbook-start-here). Each file runs on its own and shows one idea; the docs quote
 these files and nothing else. Every file that runs on a server has a Python and a TypeScript twin, and the twins
 print the same output.
 
@@ -36,7 +36,7 @@ when it fails.
 | `02-chat-one-turn` | Opens a chat, asks one question, prints the chat id and the whole answer | `LABS_AGENT_ID` |
 | `03-speak-one-line` | One speech call saved to `out/`, with the credit headers | `LABS_VOICE_ID` (else the first public voice) |
 | `04-chat-sentences` | The answer one sentence per line, as it arrives | `LABS_AGENT_ID` |
-| `05-errors-and-credits` | Forces a 401, Python's default User-Agent and a 429; reads balance and usage | `LABS_AGENT_ID` |
+| `05-errors-and-credits` | Forces a 401 and a 429; reads balance and usage | `LABS_AGENT_ID` |
 | `06-transcript` | Reads a chat's history back | `LABS_AGENT_ID`, or a chat id |
 | `07-voice-agent` | 04 plus speech per sentence, 2 in flight, played in order | `LABS_AGENT_ID` with a voice |
 
@@ -97,7 +97,7 @@ Then open `http://localhost:8040`: the sample site with the assistant on it.
 
 | Path | Shows |
 |---|---|
-| `server.py` | Starts the call with the key and hands the page only what it needs; reads the transcript back |
+| `server.py`, `server.ts` | Starts the call with the key and hands the page only what it needs; reads the transcript back |
 | `client/` | The call page (TypeScript): microphone closed while the agent speaks, tap to interrupt. Build with `npx tsc -p live-call/client` |
 
 Live calls need your own LiveKit server saved in the workspace once.
@@ -115,19 +115,33 @@ uv run python getting-started/07-voice-agent.py "Are you open on Monday?"
 
 Swap any line for its `npx tsx … .ts` twin. To type-check the TypeScript: `npm run typecheck`.
 
-## Clean up
+## Check the balance and usage
 
-`setup-02` creates an agent and `setup-04` a knowledge base; their ids are in `.env`. `clone-04-create` makes a
-cloned voice and prints its id: delete it in the dashboard, or with `DELETE /voice-audio/voices/{voiceId}`, when you no
-longer need it. Delete them when you're
-done (skip the second line if `LABS_KB_ID` is empty), then empty `LABS_AGENT_ID`, `LABS_VOICE_ID` and
-`LABS_KB_ID` in `.env`:
+Two free calls, from `examples/`: what is left on the account, and its usage by day (UTC). They don't touch the
+rate limit the way `getting-started/05-errors-and-credits` does:
 
 ```bash
 set -a; . ../.env; set +a; LABS_BASE_URL=${LABS_BASE_URL:-https://api.rezolvelabs.com/api/v1}
-curl -s -o /dev/null -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE agent -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/developer-platform/agents/$LABS_AGENT_ID"
-curl -s -o /dev/null -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE knowledge base -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/developer-platform/knowledge-bases/$LABS_KB_ID"
+curl -s --max-time 30 -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" "$LABS_BASE_URL/api-keys/balance"; echo
+curl -s --max-time 30 -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" "$LABS_BASE_URL/api-keys/usage?group_by=day"; echo
+```
+
+`low_balance` in the balance compares against `low_balance_threshold`; check that threshold before relying on it.
+
+## Clean up
+
+`setup-02` creates an agent and `setup-04` a knowledge base; their ids are in `.env`. Delete them when you're done
+(skip the second line if `LABS_KB_ID` is empty), then empty `LABS_AGENT_ID`, `LABS_VOICE_ID` and `LABS_KB_ID` in
+`.env`:
+
+```bash
+set -a; . ../.env; set +a; LABS_BASE_URL=${LABS_BASE_URL:-https://api.rezolvelabs.com/api/v1}
+curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE agent -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/developer-platform/agents/$LABS_AGENT_ID"
+curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE knowledge base -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/unstructured-data/knowledge-bases/$LABS_KB_ID"
 ```
 
 Each line prints `-> 204` when the delete worked. Empty the ids afterwards: a stale `LABS_KB_ID` makes the next
 `setup-04` upload to a deleted knowledge base. Chats need no clean-up: opening one is free.
+
+`clone-04-create` makes a cloned voice and prints its id: delete it in the dashboard, or with
+`DELETE /voice-audio/voices/{voiceId}`, when you no longer need it.
