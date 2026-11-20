@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["getting-started/*.ts", "site-setup/*.ts", "speech/*.ts"]
+  "include": ["getting-started/*.ts", "site-setup/*.ts", "speech/*.ts", "live-call/server.ts"]
 }

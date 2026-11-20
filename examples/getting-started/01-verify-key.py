@@ -1,7 +1,7 @@
 """01 · Verify the key.
 
 Checks LABS_API_KEY with GET /api-keys/verify (free) and prints its kind, plan, rate limit and the families it
-can call. Every call sends an explicit User-Agent: Python's default one is refused at the network edge.
+can call. Every call sends an explicit User-Agent.
 
 Run: uv run python getting-started/01-verify-key.py
 """

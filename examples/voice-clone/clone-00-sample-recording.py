@@ -7,7 +7,7 @@ for about a minute of it. For the real thing, use a recording of the owner, made
 
 Run: uv run python voice-clone/clone-00-sample-recording.py
 """
-import io, json, os, pathlib, sys, urllib.error, urllib.request, wave
+import io, json, os, pathlib, sys, time, urllib.error, urllib.request, wave
 
 sys.stdout.reconfigure(line_buffering=True)
 for d in pathlib.Path(__file__).resolve().parents:  # the nearest .env above this file
@@ -63,6 +63,19 @@ def labs(method, path, body=None):
     return resp.status, resp.headers, data
 
 
+def retrying(method, path, body=None):
+    """labs() that tries again after a 429 (waiting Retry-After) or a 5xx (after 1, 2, 4 and 8 s). Neither is charged."""
+    for attempt in range(30):
+        status, headers, data = labs(method, path, body)
+        if status == 429:
+            wait = int(headers.get("Retry-After", "1"))
+        elif status >= 500 and attempt < 4:
+            wait = 2 ** attempt
+        else:
+            break
+        time.sleep(wait)
+    return status, headers, data
+
 def data_of(answer, what):
     """The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why)."""
     status, _, body = answer
@@ -80,7 +93,7 @@ print(f"voices:   owner {cast['owner']}, host {cast['host']} (two public voices)
 
 frames, rate = [], 44100
 for who, text in LINES:
-    status, _, audio = labs("POST", f"/voice-audio/voices/{cast[who]}/speech", {"text": text, "outputFormat": "wav_44100"})
+    status, _, audio = retrying("POST", f"/voice-audio/voices/{cast[who]}/speech", {"text": text, "outputFormat": "wav_44100"})
     if status != 200:
         sys.exit("Speech was refused: see the body above.")
     with wave.open(io.BytesIO(audio)) as clip:  # 16-bit mono, so one frame is 2 bytes

@@ -381,11 +381,8 @@ async function listen(browser: WebSocket, who: string) {
     return browser.close(1008);
   }
   listening.add(who);
-  try {
-    await relay(browser, who, early, keep);
-  } finally {
-    listening.delete(who);
-  }
+  browser.once("close", () => listening.delete(who)); // free at once: the widget listens again as soon as its socket closes
+  await relay(browser, who, early, keep);
 }
 
 async function relay(browser: WebSocket, who: string, early: [RawData, boolean][], keep: (d: RawData, b: boolean) => void) {

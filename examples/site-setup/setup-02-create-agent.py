@@ -1,7 +1,7 @@
 """setup-02 · Create the agent, with a voice.
 
 Creates the agent from site-assistant.yaml (or the example) with its name, business, welcome line and a voice:
-an agent created without `voiceId` has none (there is no default voice), and a call on it is refused. The voice
+an agent created without `voiceId` is given a public voice, not the owner's. The voice
 is `voiceId` from the YAML, or the first ready public voice. The new ids go into .env as LABS_AGENT_ID and
 LABS_VOICE_ID. Then each of the owner's hard words is spoken twice, as written and as respelled, for the owner
 to listen to in out/hard-words/. The instructions here are a stub: setup-03 builds the real ones.

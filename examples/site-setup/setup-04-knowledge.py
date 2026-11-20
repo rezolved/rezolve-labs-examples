@@ -89,23 +89,23 @@ print(f"pages:    {len(files)} from {source}: {', '.join(r[0] for r in rows[1:])
 
 kb = os.environ.get("LABS_KB_ID")
 if not kb:
-    kb = data_of(labs("POST", "/developer-platform/knowledge-bases", {"name": f"{site['storeName']} site pages"}),
+    kb = data_of(labs("POST", "/unstructured-data/knowledge-bases", {"name": f"{site['storeName']} site pages"}),
                  "Could not create the knowledge base")["id"]
     set_env("LABS_KB_ID", kb)
     print(f"created:  knowledge base {kb}, saved as LABS_KB_ID in {ENV.name}")
-listed = data_of(labs("GET", f"/developer-platform/knowledge-bases/{kb}/documents?pageSize=100"), "Could not list the documents")
+listed = data_of(labs("GET", f"/unstructured-data/knowledge-bases/{kb}/documents?pageSize=100"), "Could not list the documents")
 older = [d["id"] for d in listed["items"]]
 
 boundary = uuid.uuid4().hex
 form = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="site-pages.csv"\r\n'
         "Content-Type: text/csv\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
-status, _, body = labs("POST", f"/developer-platform/knowledge-bases/{kb}/documents", form,
+status, _, body = labs("POST", f"/unstructured-data/knowledge-bases/{kb}/documents", form,
                        f"multipart/form-data; boundary={boundary}")
 if status != 202:
     sys.exit("The upload was refused: see the body above.")
 doc, started = json.loads(body)["data"]["id"], time.time()
 while True:  # accepted is not searchable: wait for `ready`
-    state = data_of(labs("GET", f"/developer-platform/knowledge-bases/{kb}/documents/{doc}"), "Could not read the document")
+    state = data_of(labs("GET", f"/unstructured-data/knowledge-bases/{kb}/documents/{doc}"), "Could not read the document")
     if state["status"] in ("ready", "failed"):
         break
     time.sleep(5)
@@ -113,7 +113,7 @@ if state["status"] == "failed":
     sys.exit(f"Indexing failed ({state.get('error')}); the previous pages are still in place.")
 print(f"ready:    document {doc} after {time.time() - started:.0f} s")
 for old in older:
-    labs("DELETE", f"/developer-platform/knowledge-bases/{kb}/documents/{old}")
+    labs("DELETE", f"/unstructured-data/knowledge-bases/{kb}/documents/{old}")
 print(f"removed:  {len(older)} older document(s)")
 
 if data_of(labs("GET", f"/developer-platform/agents/{AGENT}"), "Could not read the agent")["knowledgeBaseId"] == kb:

@@ -2,7 +2,7 @@
  * 01 · Verify the key.
  *
  * Checks LABS_API_KEY with GET /api-keys/verify (free) and prints its kind, plan, rate limit and the families it
- * can call. Every call sends an explicit User-Agent, as the Python twin must.
+ * can call. Every call sends an explicit User-Agent.
  *
  * Run: npx tsx getting-started/01-verify-key.ts
  */
