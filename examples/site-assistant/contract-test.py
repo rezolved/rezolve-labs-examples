@@ -3,7 +3,8 @@
 Talks to a running server only through CONTRACT.md, the way the browser does, and prints one line per check. The
 `pass` lines are the same for both servers; `note` lines hold what changes from run to run (timings, counts). Run it
 against a freshly started server: the rate-limit checks use up this visitor's minute. It asks 6 questions (60
-credits) and makes about 12 live clips and a few seconds of live transcription.
+credits) and makes about 12 live clips and a few seconds of live transcription; with photos on (`photos` in
+/api/site), 2 more questions, with a plain square for a photo.
 
 Optional: --bad-key URL, a second instance started with LABS_API_KEY=rzlb_live_sk_not_a_real_key (Labs refusals
 become `unavailable`); --small-budget URL, an instance whose SITE_ANSWERS file has perVisitorCredits: 15 (the cap
@@ -13,7 +14,7 @@ The listen check decodes the welcome clip with ffmpeg; without ffmpeg it only ch
 Run, from examples/, with a server on 8040:
   uv run python site-assistant/contract-test.py http://127.0.0.1:8040 [--bad-key URL] [--small-budget URL] [--log FILE]
 """
-import asyncio, json, pathlib, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import asyncio, base64, json, pathlib, re, shutil, struct, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zlib
 from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp, yaml
@@ -74,10 +75,11 @@ def error_code(answer):
         return None
 
 
-def ask(text, chat_id=None, cancel=False, base=None):
-    """POSTs a question and reads the stream: (status, [(seconds, event, data)]). With cancel=True it calls
-    /api/cancel at the first tool or sentence event: a reply can arrive in one burst, so later is often too late."""
-    body = {"text": text, **({"chatId": chat_id} if chat_id else {})}
+def ask(text, chat_id=None, cancel=False, base=None, photo=None):
+    """POSTs a question, with a photo if given, and reads the stream: (status, [(seconds, event, data)]). With
+    cancel=True it calls /api/cancel at the first tool or sentence event: a reply can arrive in one burst, so later is
+    often too late."""
+    body = {"text": text, **({"chatId": chat_id} if chat_id else {}), **({"photo": photo} if photo else {})}
     req = urllib.request.Request((base or BASE) + "/api/chat", data=json.dumps(body).encode(), method="POST",
                                  headers={"Origin": ORIGIN, "Content-Type": "application/json"})
     t0 = time.time()
@@ -228,6 +230,36 @@ check("finished anyway", t[0] == 200 and len(json.loads(t[2])["turns"]) == 8 and
       "the cancelled reply is in the transcript in full, longer than what was streamed")
 note(f"cancelled reply: {streamed} sentences streamed, about {whole} in the transcript")
 
+# ── Photos ───────────────────────────────────────────────────────────────────────────────────────────────────────
+def png(side, rgb):
+    """A plain square as a PNG: the test ships no photos, and the search answers whatever the photo shows."""
+    chunk = lambda kind, data: struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    rows = b"".join(b"\0" + bytes(rgb) * side for _ in range(side))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+square = "data:image/png;base64," + base64.b64encode(png(64, (150, 100, 60))).decode()
+asked = 4  # questions so far this minute: the limit check below counts on it
+if settings.get("photos"):
+    status, ev6 = ask("", photo=square)
+    asked += 1
+    said6 = [d["text"] for _, e, d in ev6 if e == "sentence"]
+    t = http("GET", "/api/transcript?chatId=" + urllib.parse.quote(ev6[0][2]["chatId"])) if ev6 else (0, {}, b"{}")
+    turns6 = json.loads(t[2]).get("turns", [])
+    check("photo", status == 200 and ev6[-1][1] == "done" and said6 and turns6[:1]
+          and turns6[0].get("photo") is True and turns6[0]["text"] == "What is this?" and "[The visitor" not in t[2].decode(),
+          f"a photo and no text: {shape(ev6)}; in the transcript as \"What is this?\" with photo: true, without the note")
+    note(f"photo answer: {' '.join(said6)[:120]}")
+    unreadable = http("POST", "/api/chat", {"text": "", "photo": "data:image/png;base64,bm90IGFuIGltYWdl"})
+    asked += 1
+    big = http("POST", "/api/chat", {"text": "", "photo": "data:image/png;base64," + "A" * 1_500_000})
+    check("photo refused", [(a[0], error_code(a)) for a in (unreadable, big)] == [(400, "bad_request"), (413, "too_long")],
+          "a photo that isn't an image: 400 bad_request; over 1,500,000 characters: 413 too_long")
+else:
+    off = http("POST", "/api/chat", {"text": "What is this?", "photo": square})
+    check("photo refused", (off[0], error_code(off)) == (400, "bad_request"), "photos off: a photo gets 400 bad_request")
+
 
 # ── Listen ───────────────────────────────────────────────────────────────────────────────────────────────────────
 async def listen_checks():
@@ -301,7 +333,7 @@ asyncio.run(listen_checks())
 
 # ── Limits ───────────────────────────────────────────────────────────────────────────────────────────────────────
 per_minute = settings["limits"]["questionsPerMinute"]
-asked, limited = 4, None  # four questions so far
+limited = None
 while asked < per_minute + 2 and not limited:
     st, ev5 = ask("Hi")
     if st == 429:

@@ -96,7 +96,8 @@ if other:
     cart = data_of(labs("DELETE", f"{C}/lines/{extra}"), "Could not remove the line")
     basket(cart, "after removing it")
 if args.no_checkout:
-    sys.exit(f"Stopped before checkout. The basket {cart['code']} stays open.")
+    print(f"Stopped before checkout. The basket {cart['code']} stays open.")
+    sys.exit(0)
 
 # Checkout, in this order: customer, address, shipping method, then checkout. Earlier answers 409.
 data_of(labs("PUT", f"{C}/customer", SHOPPER), "Could not set the customer")

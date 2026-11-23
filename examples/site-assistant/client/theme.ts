@@ -90,6 +90,7 @@ const CSS = `
 .sa-panel > .sa-log { flex: 1 1 auto; flex-shrink: 1; min-height: 3em; overflow-y: auto; display: flex; flex-direction: column; gap: .5em; }
 .sa-turn { padding: .5em .8em; border-radius: 12px; max-width: 90%; }
 .sa-user { align-self: flex-end; background: #8882; }
+.sa-thumb { display: block; max-width: 8em; max-height: 8em; border-radius: 8px; margin-bottom: .3em; }
 .sa-assistant { align-self: flex-start; border: 1px solid var(--sa-line); }
 .sa-live { opacity: .65; font-style: italic; }
 .sa-wait, .sa-note { opacity: .6; }

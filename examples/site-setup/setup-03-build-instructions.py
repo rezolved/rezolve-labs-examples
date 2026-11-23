@@ -53,12 +53,16 @@ def data_of(answer, what):
 
 
 SYMBOLS = {"EUR": "€", "GBP": "£", "USD": "$"}  # the price example in the product desk's instructions
+PHOTOS = bool(os.environ.get("LABS_PHOTO_INDEX"))  # setup-07 indexed the catalogue's photos: the server takes photos
+PHOTO_NOTE = ("A message can end with a note in square brackets: the visitor sent a photo, and the note names the "
+              "catalogue's products that look most like it, closest first.")
 
 
 def build(site, desk=False, handoff=True):
     """The whole instructions text, from the answers alone: the agent's, or with desk=True its product desk's, the
     step setup-06 adds for the catalogue. The two differ only in where their answers come from. handoff=False leaves
-    out the hand-off to a desk the agent doesn't have yet."""
+    out the hand-off to a desk the agent doesn't have yet. With PHOTOS, both are told about the note the server adds to
+    a message that came with a photo."""
     store, persona, style, size = site["storeName"], site["persona"], site["style"], site["answerStyle"]
     catalogue = site.get("catalogue") or {}
     contact = site["contact"]["path"]
@@ -75,12 +79,18 @@ def build(site, desk=False, handoff=True):
                   f"{SYMBOLS.get(catalogue['currency'], catalogue['currency'] + ' ')}4.50, not its code. Never name a "
                   f"product, price or detail the search didn't return; if nothing fits, say so and offer the contact page "
                   f"({contact}). The visitor sees and hears only your words: never mention a screen, cards or pictures."]
+        if PHOTOS:
+            lines.append(f"{PHOTO_NOTE} A photo can match the wrong product: say which product it looks most like, with "
+                         "its price, and ask if that's the one. If the note says nothing looks like it, say you couldn't "
+                         "match the photo and ask what they're looking for.")
     else:
         lines += ["", "Answer only from the knowledge base and these instructions. If the answer is not there, say you "
                   f"don't know and offer the contact page ({contact})."]
         if catalogue.get("source") and handoff:  # the catalogue is the desk's: a step can't search pages and products
             lines.append("For any question about a product, its price or what we sell, call transfer_to_product_desk and "
                          "say nothing yourself.")
+            if PHOTOS:
+                lines.append(f"{PHOTO_NOTE} Such a message is a question about a product.")
     lines += ["", "How to answer:",
               f"- Your answers are read aloud. Use at most {size['spokenMaxWords']} words in {size['spokenMaxSentences']} "
               f"sentence{'' if size['spokenMaxSentences'] == 1 else 's'}. If the visitor asks for more detail, use up to "

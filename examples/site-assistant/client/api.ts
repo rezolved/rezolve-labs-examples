@@ -8,7 +8,7 @@ export const API = new URL("/api/", import.meta.url);
 
 export interface Route { label: string; path: string; aliases: string[]; anchorsAllowed: boolean }
 export interface Link { path: string; label: string }
-export interface Turn { role: "user" | "assistant"; text: string; link: Link | null }
+export interface Turn { role: "user" | "assistant"; text: string; link: Link | null; photo?: true }
 
 /** The owner's settings, from GET /api/site. */
 export interface Site {
@@ -22,6 +22,7 @@ export interface Site {
   retention: { keepTranscripts: boolean; askMicConsent: boolean; askStorageConsent: boolean };
   limits: { questionChars: number; speechChars: number; listenSeconds: number };
   messages: Record<string, string>;
+  photos: boolean;
   clipVersion?: string;
 }
 
@@ -70,11 +71,11 @@ export async function getSite(): Promise<Site> {
 }
 
 /**
- * Asks a question and yields the answer's events as the server sends them (`chat` first, `done` last). Nothing
- * waits for the whole answer: each sentence is yielded the moment its line arrives.
+ * Asks a question, with a photo if there is one, and yields the answer's events as the server sends them (`chat`
+ * first, `done` last). Nothing waits for the whole answer: each sentence is yielded the moment its line arrives.
  */
-export async function* chat(text: string, chatId: string | null, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
-  const res = await post("chat", chatId ? { text, chatId } : { text }, signal);
+export async function* chat(text: string, chatId: string | null, signal?: AbortSignal, photo?: string): AsyncGenerator<ChatEvent> {
+  const res = await post("chat", { text, ...(chatId && { chatId }), ...(photo && { photo }) }, signal);
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "", event = "";
   for (;;) {

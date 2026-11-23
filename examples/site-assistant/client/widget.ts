@@ -12,6 +12,7 @@ import { mark, showState, startTurn } from "./debug.js";
 import { hooks } from "./hooks.js";
 import { listen, micAllowed, wakeMic, warmMic, type Heard } from "./mic.js";
 import { acceptsOffer, go, isHere, routeFor, routeRequested, type Target } from "./nav.js";
+import { shrink } from "./photo.js";
 import { Player } from "./player.js";
 import { Store } from "./store.js";
 import { Typer } from "./sync.js";
@@ -37,6 +38,7 @@ const ICON = {
   voiceOn: svg("M4 9v6h4l5 4V5L8 9H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"),
   voiceOff: svg("M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6"),
   close: svg("M6 6l12 12M18 6L6 18"),
+  photo: svg("M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"),
 };
 
 /** One question being answered. */
@@ -122,7 +124,7 @@ class Widget {
     const mic = iconButton("sa-mic", "Speak", ICON.mic);
     const send = iconButton("sa-send", "Send", ICON.send);
     send.type = "submit";
-    form.append(input, mic, send);
+    form.append(input, ...(this.site.photos ? this.photoButton(input) : []), mic, send);
     form.onsubmit = (e) => {
       e.preventDefault();
       const text = input.value.trim();
@@ -151,6 +153,36 @@ class Widget {
     }
     box.append(form, chips);
     return box;
+  }
+
+  /** The camera button, when the server takes photos: the visitor picks a photo, or takes one on a phone. */
+  private photoButton(input: HTMLInputElement): HTMLElement[] {
+    const pick = el("input", "");
+    pick.type = "file";
+    pick.accept = "image/*";
+    pick.hidden = true;
+    const button = iconButton("sa-photo", "Send a photo of a product", ICON.photo);
+    button.onclick = () => {
+      this.player.unlock();
+      pick.click();
+    };
+    pick.onchange = async () => {
+      const file = pick.files?.[0];
+      pick.value = "";
+      if (!file) return;
+      this.open();
+      let photo: string;
+      try {
+        photo = await shrink(file);
+      } catch { // a reply, not a hint: the welcome's own hint would replace a hint at once
+        this.bubble("assistant", "Sorry, I couldn't read that photo. Try a JPEG or PNG.");
+        return;
+      }
+      const text = input.value.trim();
+      input.value = "";
+      void this.ask(text || "What is this?", false, photo);
+    };
+    return [button, pick];
   }
 
   private buildPanel(): void {
@@ -219,16 +251,22 @@ class Widget {
   // ---- a question and its answer: the sentence is the unit, and the audio drives the text
 
   /** Asks one question. Resolves once its answer has been shown and spoken, or stopped. */
-  async ask(text: string, spokenQuestion: boolean): Promise<void> {
-    if (this.site.navigation.enabled && this.navigationRequest(text, spokenQuestion)) return;
+  async ask(text: string, spokenQuestion: boolean, photo?: string): Promise<void> {
+    if (!photo && this.site.navigation.enabled && this.navigationRequest(text, spokenQuestion)) return;
     this.interrupt();
     this.offer = null;
-    this.bubble("user", text);
+    const question = this.bubble("user", text);
+    if (photo) {
+      const img = el("img", "sa-thumb");
+      img.src = photo;
+      img.alt = "Your photo";
+      question.prepend(img);
+    }
     const reply = this.bubble("assistant");
     reply.append(el("span", "sa-wait", "…"));
     const answer: Answer = (this.answer = { cancelled: false, typers: [], abort: new AbortController() });
     this.setState("thinking");
-    startTurn(`ask (${spokenQuestion ? "spoken" : "typed"}): ${text}`);
+    startTurn(`ask (${spokenQuestion ? "spoken" : photo ? "photo" : "typed"}): ${text}`);
     if (!this.storageAsked) void this.askStorage();
 
     let clips = 0, ended = 0, streamDone = false, problem = "", acknowledged = false;
@@ -264,7 +302,7 @@ class Widget {
     });
 
     try {
-      for await (const { event, data } of chat(text, this.chatId, answer.abort.signal)) {
+      for await (const { event, data } of chat(text, this.chatId, answer.abort.signal, photo)) {
         if (event === "chat") this.setChat(data.chatId); // kept even if cancelled: the transcript has the turn
         if (event === "done") mark(`done${data.cancelled ? " (cancelled)" : ""}`);
         if (answer.cancelled) continue; // the server ends the stream at once after a cancel
@@ -530,6 +568,7 @@ class Widget {
       this.chatId = chatId;
       for (const turn of turns) {
         const b = this.bubble(turn.role, turn.text);
+        if (turn.photo) b.append(el("span", "sa-note", "Sent with a photo"));
         if (!turn.link || !this.site.followUp.offerNavigation) continue;
         this.offer = this.offerLink(b, turn.link) ?? this.offer;
       }
