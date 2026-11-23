@@ -4,9 +4,10 @@ The catalogue's collection (setup-06, LABS_COLLECTION) holds each product's `ima
 photos to a photo index named after the collection, waits until every photo is indexed, and saves the index's name
 as LABS_PHOTO_INDEX in .env: the server then takes photos in the chat (site-assistant/CONTRACT.md). Run it again
 after the catalogue gains products: only new photos are charged. Pass a photo, as a file or a web address, to see
-which products it finds, and their scores: the server names only those above `catalogue.photoMinScore`.
+which products it finds, and their scores: the server names only those scoring at least `catalogue.photoMinScore`.
+With --search it skips the sync, so trying photos takes seconds, not minutes.
 
-Run: uv run python site-setup/setup-07-photos.py [photo]
+Run: uv run python site-setup/setup-07-photos.py [--search] [photo]   (--search: only the search, on LABS_PHOTO_INDEX)
 """
 import base64, json, os, pathlib, sys, time, urllib.error, urllib.request
 import yaml
@@ -57,35 +58,39 @@ def set_env(name, value):
     ENV.write_text("\n".join(lines + [f"{name}={value}"]) + "\n")
 
 
-# 1. Ask for the collection's photos, then follow the sync: it starts within a minute
-sync = data_of(labs("POST", f"{VS}/collections/{COLLECTION}/photos", {"model": MODEL}), "The photos were not asked for")
-index, started = sync["indexName"], time.time()
-while sync["state"] not in ("done", "failed", "gave_up"):
-    time.sleep(5)
-    sync = data_of(labs("GET", f"{VS}/collections/{COLLECTION}/photos"), "Could not read the sync")
-if sync["state"] != "done":
-    sys.exit(f"The sync ended {sync['state']}: {sync['error']}")
-if sync["error"]:
-    print(f"note:     {sync['error']}")
-if not sync["newPhotos"] + sync["updatedPhotos"]:
-    sys.exit("No product has a photo: give the catalogue an image_url column of web addresses, run setup-06, then this.")
+if "--search" in sys.argv:  # only the search, on the index made before: no waiting for a sync
+    index = os.environ.get("LABS_PHOTO_INDEX") or sys.exit("No LABS_PHOTO_INDEX: run setup-07 without --search first.")
+else:
+    # 1. Ask for the collection's photos, then follow the sync: it starts within a minute
+    sync = data_of(labs("POST", f"{VS}/collections/{COLLECTION}/photos", {"model": MODEL}), "The photos were not asked for")
+    index, started = sync["indexName"], time.time()
+    while sync["state"] not in ("done", "failed", "gave_up"):
+        time.sleep(5)
+        sync = data_of(labs("GET", f"{VS}/collections/{COLLECTION}/photos"), "Could not read the sync")
+    if sync["state"] != "done":
+        sys.exit(f"The sync ended {sync['state']}: {sync['error']}")
+    if sync["error"]:
+        print(f"note:     {sync['error']}")
+    if not sync["newPhotos"] + sync["updatedPhotos"]:
+        sys.exit("No product has a photo: give the catalogue an image_url column of web addresses, run setup-06, then this.")
 
-# 2. Wait until every photo is downloaded and indexed
-while (state := data_of(labs("GET", f"{VS}/indexes/{index}"), "Could not read the index"))["queuedPhotos"]:
-    time.sleep(3)
-print(f"ready:    {index}, {state['photos']} photos of {state['products']} products, model {state['model']}, "
-      f"after {time.time() - started:.0f} s ({sync['newPhotos']} new)")
-if state["failedPhotos"]:
-    print(f"note:     {state['failedPhotos']} photos could not be downloaded: check their image_url opens from anywhere")
-set_env("LABS_PHOTO_INDEX", index)
-print(f"saved:    LABS_PHOTO_INDEX={index} in {ENV.name}")
+    # 2. Wait until every photo is downloaded and indexed
+    while (state := data_of(labs("GET", f"{VS}/indexes/{index}"), "Could not read the index"))["queuedPhotos"]:
+        time.sleep(3)
+    print(f"ready:    {index}, {state['photos']} photos of {state['products']} products, model {state['model']}, "
+          f"after {time.time() - started:.0f} s ({sync['newPhotos']} new)")
+    if state["failedPhotos"]:
+        print(f"note:     {state['failedPhotos']} photos could not be downloaded: check their image_url opens from anywhere")
+    set_env("LABS_PHOTO_INDEX", index)
+    print(f"saved:    LABS_PHOTO_INDEX={index} in {ENV.name}")
 
 # 3. With a photo: the products it finds, closest first
-if len(sys.argv) > 1:
-    photo = sys.argv[1]
+photos = [a for a in sys.argv[1:] if a != "--search"]
+if photos:
+    photo = photos[0]
     query = {"imageUrl": photo} if photo.startswith(("https://", "http://")) else \
         {"imageBase64": base64.b64encode(pathlib.Path(photo).read_bytes()).decode()}
-    # minScore 0 shows the closest three whatever they score; the server names only those above MIN_SCORE
+    # minScore 0 shows the closest three whatever they score; the server names only those at MIN_SCORE or more
     found = data_of(labs("POST", f"{VS}/indexes/{index}/search", {**query, "limit": 3, "minScore": 0}), "The search failed")
     floor = found["minScore"] if MIN_SCORE is None else MIN_SCORE
     for m in found["results"]:

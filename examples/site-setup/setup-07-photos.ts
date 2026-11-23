@@ -5,10 +5,10 @@
  * those photos to a photo index named after the collection, waits until every photo is indexed, and saves the
  * index's name as LABS_PHOTO_INDEX in .env: the server then takes photos in the chat (site-assistant/CONTRACT.md).
  * Run it again after the catalogue gains products: only new photos are charged. Pass a photo, as a file or a web
- * address, to see which products it finds, and their scores: the server names only those above
- * `catalogue.photoMinScore`.
+ * address, to see which products it finds, and their scores: the server names only those scoring at least
+ * `catalogue.photoMinScore`. With --search it skips the sync, so trying photos takes seconds, not minutes.
  *
- * Run: npx tsx site-setup/setup-07-photos.ts [photo]
+ * Run: npx tsx site-setup/setup-07-photos.ts [--search] [photo]   (--search: only the search, on LABS_PHOTO_INDEX)
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -63,33 +63,39 @@ function setEnv(name: string, value: string) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// 1. Ask for the collection's photos, then follow the sync: it starts within a minute
-let sync = await data_of(labs("POST", `${VS}/collections/${COLLECTION}/photos`, { model: MODEL }), "The photos were not asked for");
-const index: string = sync.indexName, started = Date.now();
-while (!["done", "failed", "gave_up"].includes(sync.state)) {
-  await sleep(5000);
-  sync = await data_of(labs("GET", `${VS}/collections/${COLLECTION}/photos`), "Could not read the sync");
-}
-if (sync.state !== "done") fail(`The sync ended ${sync.state}: ${sync.error}`);
-if (sync.error) console.log(`note:     ${sync.error}`);
-if (!(sync.newPhotos + sync.updatedPhotos))
-  fail("No product has a photo: give the catalogue an image_url column of web addresses, run setup-06, then this.");
+let index: string;
+if (process.argv.includes("--search")) { // only the search, on the index made before: no waiting for a sync
+  index = process.env.LABS_PHOTO_INDEX || fail("No LABS_PHOTO_INDEX: run setup-07 without --search first.");
+} else {
+  // 1. Ask for the collection's photos, then follow the sync: it starts within a minute
+  let sync = await data_of(labs("POST", `${VS}/collections/${COLLECTION}/photos`, { model: MODEL }), "The photos were not asked for");
+  index = sync.indexName;
+  const started = Date.now();
+  while (!["done", "failed", "gave_up"].includes(sync.state)) {
+    await sleep(5000);
+    sync = await data_of(labs("GET", `${VS}/collections/${COLLECTION}/photos`), "Could not read the sync");
+  }
+  if (sync.state !== "done") fail(`The sync ended ${sync.state}: ${sync.error}`);
+  if (sync.error) console.log(`note:     ${sync.error}`);
+  if (!(sync.newPhotos + sync.updatedPhotos))
+    fail("No product has a photo: give the catalogue an image_url column of web addresses, run setup-06, then this.");
 
-// 2. Wait until every photo is downloaded and indexed
-let state: any;
-while ((state = await data_of(labs("GET", `${VS}/indexes/${index}`), "Could not read the index")).queuedPhotos) await sleep(3000);
-console.log(`ready:    ${index}, ${state.photos} photos of ${state.products} products, model ${state.model}, `
-  + `after ${Math.round((Date.now() - started) / 1000)} s (${sync.newPhotos} new)`);
-if (state.failedPhotos)
-  console.log(`note:     ${state.failedPhotos} photos could not be downloaded: check their image_url opens from anywhere`);
-setEnv("LABS_PHOTO_INDEX", index);
-console.log(`saved:    LABS_PHOTO_INDEX=${index} in .env`);
+  // 2. Wait until every photo is downloaded and indexed
+  let state: any;
+  while ((state = await data_of(labs("GET", `${VS}/indexes/${index}`), "Could not read the index")).queuedPhotos) await sleep(3000);
+  console.log(`ready:    ${index}, ${state.photos} photos of ${state.products} products, model ${state.model}, `
+    + `after ${Math.round((Date.now() - started) / 1000)} s (${sync.newPhotos} new)`);
+  if (state.failedPhotos)
+    console.log(`note:     ${state.failedPhotos} photos could not be downloaded: check their image_url opens from anywhere`);
+  setEnv("LABS_PHOTO_INDEX", index);
+  console.log(`saved:    LABS_PHOTO_INDEX=${index} in .env`);
+}
 
 // 3. With a photo: the products it finds, closest first
-const photo = process.argv[2];
+const photo = process.argv.slice(2).find((a) => a !== "--search");
 if (photo) {
   const query = /^https?:\/\//.test(photo) ? { imageUrl: photo } : { imageBase64: readFileSync(photo).toString("base64") };
-  // minScore 0 shows the closest three whatever they score; the server names only those above MIN_SCORE
+  // minScore 0 shows the closest three whatever they score; the server names only those at MIN_SCORE or more
   const found = await data_of(labs("POST", `${VS}/indexes/${index}/search`, { ...query, limit: 3, minScore: 0 }), "The search failed");
   const floor = MIN_SCORE ?? found.minScore;
   for (const m of found.results) {

@@ -174,8 +174,9 @@ class Widget {
       let photo: string;
       try {
         photo = await shrink(file);
-      } catch {
-        return this.note("Sorry, I couldn't read that photo. Try a JPEG or PNG.");
+      } catch { // a reply, not a hint: the welcome's own hint would replace a hint at once
+        this.bubble("assistant", "Sorry, I couldn't read that photo. Try a JPEG or PNG.");
+        return;
       }
       const text = input.value.trim();
       input.value = "";
