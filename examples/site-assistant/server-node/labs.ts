@@ -114,6 +114,23 @@ export function respell(text: string, pronunciations: Pronunciation[]): string {
   return text;
 }
 
+// correct() is copied from speech/speech-sound-alikes.ts.
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The transcript with each word spelled as the owner spells it, matched as whole words in any case. */
+export function correct(text: string, words: string[], alikes: Record<string, string[]>): string {
+  for (const word of [...words].sort((a, b) => b.length - a.length)) {
+    const forms = [[...word.replace(/ /g, "")].map(escape).join("[\\s-]?"), // "saltmarsh", "salt marsh", "salt-marsh"
+      ...(alikes[word] ?? []).map(escape)];
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${forms.join("|")})(?![\\p{L}\\p{N}_])`, "giu");
+    text = text.replace(pattern, (_m: string, at: number, whole: string) => { // a capital only where a sentence starts
+      const before = whole.slice(0, at).trimEnd();
+      return !before || ".!?".includes(before.at(-1)!) ? word[0].toUpperCase() + word.slice(1) : word;
+    });
+  }
+  return text;
+}
+
 // speechBody() and clipKey() are copied from speech/speech-cache-key.ts, so a line matches its stored clip.
 const SPACES = /[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/g; // the same set in Python
 

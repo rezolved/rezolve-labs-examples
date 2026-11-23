@@ -58,7 +58,8 @@ def build(site):
     contact = site["contact"]["path"]
     pages = site["followUp"]["offerNavigation"] and site["navigation"]["enabled"] and site["routes"]
     if persona["voice"] == "person":
-        lines = [f"You are {persona['name']}, speaking in the first person for {store} on its website."]
+        lines = [f"You are {persona['name']}, speaking in the first person for {store} on its website. "
+                 "The welcome has introduced you: don't introduce yourself again in an answer."]
     else:
         lines = [f'You are the website assistant for {store}. Speak for the business as "we".']
     lines += ["", "Answer only from the knowledge base and these instructions. If the answer is not there, say you don't "
@@ -70,9 +71,12 @@ def build(site):
               "- Write plain sentences only: no markdown, lists, headings, bold, links or emoji.",
               f"- Tone: {style['tone']}. Use {style['spelling']} spelling, "
               f"{'with' if style['serialComma'] else 'without'} the serial comma."]
-    spellings = style["brandSpellings"] + site["vocabulary"]
+    spellings = list(dict.fromkeys(style["brandSpellings"] + site["vocabulary"]))  # each once, in order
     if spellings:
         lines.append(f"- Spell these exactly as written: {', '.join(spellings)}.")
+    heard = [f'read "{alike}" as {word}' for word, alikes in (site.get("soundAlikes") or {}).items() for alike in alikes]
+    if heard:  # for a transcript that reaches the agent uncorrected (see speech/speech-sound-alikes)
+        lines.append(f"- Visitors may speak, so a word can arrive misheard: {'; '.join(heard)}.")
     if site["offLimits"]:
         lines += ["", "Off limits:"] + [f"- Do not discuss {topic}. Say politely that you can't help with that."
                                         for topic in site["offLimits"]]

@@ -21,14 +21,16 @@ export function routeFor(path: string, routes: Route[]): Target | null {
     return null;
   }
   if (url.origin !== location.origin) return null;
+  const section = routes.find((r) => r.path.includes("#") && r.path === url.pathname + url.hash); // "/#finding-us"
+  if (section) return { route: section, path: section.path };
   const route = routes.find((r) => samePath(r.path, url.pathname));
   return route ? { route, path: route.path + (route.anchorsAllowed ? url.hash : "") } : null;
 }
 
 const samePath = (a: string, b: string) => (a.replace(/\/+$/, "") || "/") === (b.replace(/\/+$/, "") || "/");
 
-/** True if `path` is the page already open. */
-export const isHere = (path: string): boolean => samePath(path.split("#")[0], location.pathname);
+/** True if `path` is the page already open. A section of a page ("/#finding-us") is never "here": it is offered. */
+export const isHere = (path: string): boolean => !path.includes("#") && samePath(path, location.pathname);
 
 const ASK = /^(?:please\s+)?(?:(?:take me|bring me|go|navigate)(?: to)?|open|show me)\s+(.+?)[.!?]*$/i;
 const YES = /^(?:yes|yeah|yep|sure|ok|okay|please|go there|take me there|open it|show me)(?:,?\s*(?:please|thanks))?[.!]*$/i;

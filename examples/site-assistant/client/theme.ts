@@ -70,7 +70,7 @@ const CSS = `
   background: var(--sa-bg); border: 1px solid var(--sa-line); border-radius: 14px; box-shadow: 0 8px 32px #0003; }
 .sa-panel[hidden], .sa-launch[hidden], .sa-banner[hidden] { display: none; }
 .sa-panel .sa-box { margin: 0; }
-.sa-panel .sa-log:not(:empty) ~ .sa-box .sa-chips { display: none; }
+.sa-panel .sa-log:has(.sa-user) ~ .sa-box .sa-chips { display: none; }
 .sa-head { display: flex; align-items: center; gap: .4em; }
 .sa-title { flex: 1; text-align: left; background: none; border: 0; padding: 0; font-weight: 600; }
 .sa-signal { height: 3px; border-radius: 3px; background: var(--sa-accent); opacity: .35; cursor: pointer;

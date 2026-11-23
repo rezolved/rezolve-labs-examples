@@ -28,6 +28,14 @@ ANSWERS = pathlib.Path("site-assistant.yaml")
 if not ANSWERS.exists():
     ANSWERS = pathlib.Path(__file__).resolve().parent.parent / "site-setup" / "site-assistant.example.yaml"
 site = yaml.safe_load(ANSWERS.read_text(encoding="utf-8"))
+# The owner's own site, from the answers, so the test runs against any site: a page other than the home page, the
+# suggested prompts as questions, and the words of the welcome line to listen for.
+ROUTES = site.get("routes") or []
+PAGE = next((r["path"].split("#")[0] for r in ROUTES if r["path"].split("#")[0] not in ("", "/")), "/")
+PROMPTS = (site.get("prompts") or []) + ["What can you help me with?"] * 3
+LONG = ("Please give me a long, detailed answer of at least five sentences: describe, one by one, everything you "
+        "know about " + ", then ".join(r["label"] for r in ROUTES) + ".")
+WELCOME_WORDS = set(re.findall(r"[a-z]{5,}", re.sub(r"\[[^\]]*\]", "", site["welcomeMessage"].lower())))
 seen = []  # every status line, header and body the server sent, searched for the key at the end
 results = []
 
@@ -108,10 +116,10 @@ def shape(events):
 
 # ── Pages and settings ───────────────────────────────────────────────────────────────────────────────────────────
 print(f"server:    {BASE}")
-home, breads, nope = http("GET", "/", headers={"Origin": None}), http("GET", "/breads", headers={"Origin": None}), \
+home, page, nope = http("GET", "/", headers={"Origin": None}), http("GET", PAGE, headers={"Origin": None}), \
     http("GET", "/nope", headers={"Origin": None})
-check("pages", home[0] == breads[0] == 200 and b"Saltmarsh Bakery" in home[2] and nope[0] == 404,
-      f"/ and /breads 200, /nope {nope[0]}; widget tag {'added' if b'/assistant/widget.js' in home[2] else 'absent (client not built)'}")
+check("pages", home[0] == page[0] == 200 and site["storeName"].encode() in home[2] and nope[0] == 404,
+      f"/ and {PAGE} 200, /nope {nope[0]}; widget tag {'added' if b'/assistant/widget.js' in home[2] else 'absent (client not built)'}")
 
 s = http("GET", "/api/site")
 settings = json.loads(s[2]) if s[0] == 200 else {}
@@ -125,7 +133,7 @@ check("site", s[0] == 200 and settings.get("title") == site["title"] and not lea
 # ── Who may call ─────────────────────────────────────────────────────────────────────────────────────────────────
 evil = http("POST", "/api/chat", {"text": "hi"}, headers={"Origin": "https://evil.example"})
 bare = http("GET", "/api/site", headers={"Origin": None})
-ref = http("GET", "/api/site", headers={"Origin": None, "Referer": ORIGIN + "/breads"})
+ref = http("GET", "/api/site", headers={"Origin": None, "Referer": ORIGIN + PAGE})
 check("origin", (evil[0], error_code(evil), bare[0], ref[0]) == (403, "not_allowed", 403, 200),
       f"other origin {evil[0]} {error_code(evil)}, no Origin or Referer {bare[0]}, Referer from this origin {ref[0]}")
 pre = http("OPTIONS", "/api/chat", headers={"Access-Control-Request-Method": "POST"})
@@ -148,7 +156,7 @@ check("too_long", [(a[0], error_code(a)) for a in (long_q, long_s)] == [(413, "t
       f"{settings['limits']['speechChars'] + 1} {long_s[0]}")
 
 # ── Chat ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-Q1 = "Tell me about your breads, and can I bring my dog?"
+Q1 = PROMPTS[0]
 status, ev = ask(Q1)
 names = [e for _, e, _ in ev]
 said = [d for _, e, d in ev if e == "sentence"]
@@ -161,7 +169,7 @@ check("chat stream", status == 200 and names[:1] == ["chat"] and names[-1:] == [
       f"{shape(ev)}; tool event ahead of the sentences, indexes from 0, no markdown, done {{cancelled: false}}")
 note(f"tool at {tool or 0:.1f}s, first sentence at {first:.1f}s, done at {ev[-1][0]:.1f}s, {len(said)} sentences, links {[d['path'] for _, e, d in ev if e == 'link']}")
 chat_id = ev[0][2]["chatId"] if ev else ""
-status, ev2 = ask("Are you open on Monday?", chat_id)
+status, ev2 = ask(PROMPTS[1], chat_id)
 check("same chat", status == 200 and ev2 and ev2[0][2]["chatId"] == chat_id and ev2[-1][1] == "done",
       f"second question with the chat id: {shape(ev2)}, the same chat id back")
 
@@ -198,7 +206,6 @@ with urllib.request.urlopen(req, timeout=120) as r:
 note(f"live clip: first byte {ttfb:.2f}s, {len(live)} bytes in {time.time() - t0:.2f}s")
 
 # ── Cancel ───────────────────────────────────────────────────────────────────────────────────────────────────────
-LONG = "Describe each of your breads in detail, one by one, then your opening hours for every day of the week."
 status, ev3 = ask(LONG, chat_id, cancel_after=1)
 cancel_at = next((i for i, (_, e, _) in enumerate(ev3) if e == "(cancel)"), None)
 after = [e for _, e, _ in ev3[cancel_at + 1:]] if cancel_at is not None else []
@@ -209,7 +216,7 @@ check("cancel", cancel_at is not None and ev3[cancel_at][2] == {"cancelled": Tru
 if cancel_at is not None:
     note(f"cancel answered at {ev3[cancel_at][0]:.1f}s, done at {ev3[-1][0]:.1f}s, "
          f"{after.count('sentence')} sentences already on their way, {streamed} streamed in all")
-status, ev4 = ask("Do you deliver?", chat_id)
+status, ev4 = ask(PROMPTS[2], chat_id)
 again = http("POST", "/api/cancel", {"chatId": chat_id})
 check("after cancel", status == 200 and ev4[-1][2] == {"cancelled": False} and json.loads(again[2]) == {"cancelled": False},
       f"the next question on the same chat waits for the cancelled reply, then {shape(ev4)}; cancel now {{cancelled: false}}")
@@ -254,7 +261,7 @@ async def listen_checks():
         got, code = await run({"type": "start", "sampleRate": 16000}, pcm or bytes(32000))
         types = [g["type"] for g in got]
         finals = " ".join(g["text"] for g in got if g["type"] == "final")
-        heard = "bakery" in finals.lower() if pcm else True
+        heard = any(w in finals.lower() for w in WELCOME_WORDS) if pcm else True
         check("listen", types[:1] == ["ready"] and types[-1:] == ["end"] and code == 1000 and heard,
               f"ready, partial/final, end, close {code}" + ("; the welcome clip heard as said" if pcm else "; silence only (no ffmpeg)"))
         note(f"heard: {finals!r}")
