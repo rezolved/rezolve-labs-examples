@@ -53,10 +53,14 @@ async function data_of(res: Response | Promise<Response>, what: string): Promise
 }
 
 const SYMBOLS: Record<string, string> = { EUR: "€", GBP: "£", USD: "$" }; // the price example in the product desk's instructions
+const PHOTOS = Boolean(process.env.LABS_PHOTO_INDEX); // setup-07 indexed the catalogue's photos: the server takes photos
+const PHOTO_NOTE = "A message can end with a note in square brackets: the visitor sent a photo, and the note names the "
+  + "catalogue's products that look most like it, closest first.";
 
 /** The whole instructions text, from the answers alone: the agent's, or with desk=true its product desk's, the
  * step setup-06 adds for the catalogue. The two differ only in where their answers come from. handoff=false leaves
- * out the hand-off to a desk the agent doesn't have yet. */
+ * out the hand-off to a desk the agent doesn't have yet. With PHOTOS, both are told about the note the server adds to
+ * a message that came with a photo. */
 function build(site: any, desk = false, handoff = true): string {
   const { storeName: store, persona, style, answerStyle: size } = site;
   const catalogue = site.catalogue ?? {};
@@ -73,12 +77,18 @@ function build(site: any, desk = false, handoff = true): string {
       + `${SYMBOLS[catalogue.currency] ?? catalogue.currency + " "}4.50, not its code. Never name a `
       + `product, price or detail the search didn't return; if nothing fits, say so and offer the contact page `
       + `(${contact}). The visitor sees and hears only your words: never mention a screen, cards or pictures.`);
+    if (PHOTOS) {
+      lines.push(`${PHOTO_NOTE} A photo can match the wrong product: say which product it looks most like, with `
+        + "its price, and ask if that's the one. If the note says nothing looks like it, say you couldn't "
+        + "match the photo and ask what they're looking for.");
+    }
   } else {
     lines.push("", "Answer only from the knowledge base and these instructions. If the answer is not there, say you "
       + `don't know and offer the contact page (${contact}).`);
     if (catalogue.source && handoff) { // the catalogue is the desk's: a step can't search pages and products
       lines.push("For any question about a product, its price or what we sell, call transfer_to_product_desk and "
         + "say nothing yourself.");
+      if (PHOTOS) lines.push(`${PHOTO_NOTE} Such a message is a question about a product.`);
     }
   }
   lines.push("", "How to answer:",

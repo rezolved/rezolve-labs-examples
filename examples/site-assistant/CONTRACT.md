@@ -36,9 +36,12 @@ limits and the message for each error code:
   "retention": {"keepTranscripts": true, "keepDays": 30, "analytics": false, "askMicConsent": true, "askStorageConsent": true},
   "limits": {"questionChars": 500, "speechChars": 300, "listenSeconds": 60, "questionsPerMinute": 6, "clipsPerMinute": 12},
   "listen": {"encoding": "pcm_s16le", "sampleRates": [8000, 16000]},
-  "messages": {"budget_reached": "The assistant has reached its limit for now. Please use the contact page.", "…": "…"}
+  "messages": {"budget_reached": "The assistant has reached its limit for now. Please use the contact page.", "…": "…"},
+  "photos": false
 }
 ```
+
+`photos` is `true` when the server takes a photo with a question (`LABS_PHOTO_INDEX` is set: `site-setup/setup-07-photos`).
 
 It never contains the alert addresses, the webhook URL, the agent id or any key.
 
@@ -46,6 +49,13 @@ It never contains the alert addresses, the webhook URL, the agent id or any key.
 
 Request: `{"text": "Are you open on Monday?", "chatId": "…"}`. `text` is 1–`limits.questionChars` characters.
 Leave `chatId` out for the first question; send the one from the last `chat` event after that.
+
+When `photos` is `true`, a question can come with a `photo`: a `data:image/…;base64,…` URL of at most 1,500,000
+characters (the widget sends a JPEG at most 1,024 pixels across). `text` can then be empty. The server searches the
+catalogue's photo index with it and sends the agent the question with a note after it, on a line of its own:
+`[The visitor sent a photo. The catalogue's products that look most like it, closest first: Cinnamon Bun, Country
+Sourdough.]`, or `… Nothing in the catalogue looks like it.]`. An empty `text` is sent as "What is this?". The
+search costs a credit, and the question counts once toward `questionsPerMinute`.
 
 Answer: `200 text/event-stream`, sent event by event as the agent writes (never buffered). Each event is
 `event: <name>` and `data: <one JSON object>`, then a blank line. In this order:
@@ -114,6 +124,7 @@ close: `1008` for the server's own limits, otherwise Labs' close code (`4000` ba
 
 `200 {"chatId", "turns": [{"role": "user" | "assistant", "text", "link"}]}`, oldest first. Assistant text has its
 markdown removed and its `Read more:` line taken out as `link` (`{"path", "label"}` or `null`), as in the stream.
+A question sent with a photo has `"photo": true`, and its `text` without the server's note; the photo isn't kept.
 Tool look-ups are left out. A `chatId` this server didn't issue gets `404 not_found`. Up to 30 reads a minute per
 visitor.
 
@@ -131,10 +142,10 @@ the browser.
 
 | Code | Status | When |
 |---|---|---|
-| `bad_request` | 400 | No `text`, not JSON, an unknown field, a bad start frame |
+| `bad_request` | 400 | No `text`, not JSON, an unknown field, a bad start frame; a `photo` that isn't an image, or sent while `photos` is `false` |
 | `not_allowed` | 403 | The request's origin is not allowed |
 | `not_found` | 404 | A `chatId` this server didn't issue; an unknown `/api/` path |
-| `too_long` | 413 | Over `questionChars` or `speechChars`; a WebSocket frame over 64 KB |
+| `too_long` | 413 | Over `questionChars` or `speechChars`; a `photo` over 1,500,000 characters, or over 10 MB or 40 megapixels once read; a WebSocket frame over 64 KB |
 | `slow_down` | 429 | This visitor's or the whole site's per-minute limit, or a second open listen session; also Labs' account limit |
 | `budget_reached` | 402 | The month's or this visitor's spend cap is reached, or the account is out of credits. `message` is the owner's `budget.atLimitMessage`. |
 | `unavailable` | 503 | Labs failed or can't answer right now (the owner is alerted when a person must act) |

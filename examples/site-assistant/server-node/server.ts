@@ -22,7 +22,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import YAML from "yaml";
 import * as guard from "./guard.ts";
 import {
-  AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clipKey, correct, events, fail, labs, plain, respell, seal, sentences, speechBody,
+  AGENT, FALLBACK, KEY, LIVE, PHOTO_INDEX, READ_MORE, UA, clipKey, correct, events, fail, labs, plain, respell, seal, sentences, speechBody,
   unseal, verdict, type Code, type SpeechBody,
 } from "./labs.ts";
 
@@ -38,6 +38,9 @@ const CLIENT = join(HERE, "..", "client", "dist");
 const CLIPS = "out/clips";
 const HOST = process.env.HOST || "127.0.0.1";
 const QUESTION_CHARS = 500, SPEECH_CHARS = 300, LISTEN_SECONDS = 60, FRAME_BYTES = 64 * 1024;
+const PHOTO_CHARS = 1_500_000; // a photo as a data: URL; the widget sends one at most 1,024 pixels across, about 200 KB
+const PHOTO_NOTE = "[The visitor sent a photo."; // how the note the server adds to a message with a photo starts
+const PHOTO_MIN: number | undefined = site.catalogue?.photoMinScore ?? undefined; // undefined: the photo model's own floor
 const LIVE_PATH = "/transcription/voices/transcriptions/live";
 
 const rates = site.rateLimits ?? {}, money = site.budget ?? {};
@@ -98,7 +101,11 @@ async function call(who: string, method: string, path: string, body?: unknown): 
 
 async function jsonOf(req: IncomingMessage, fields: string[]): Promise<Record<string, any>> {
   const parts: Buffer[] = [];
-  for await (const part of req) parts.push(part);
+  let size = 0;
+  for await (const part of req) {
+    if ((size += part.length) > PHOTO_CHARS + 64 * 1024) throw new Refused("too_long"); // the largest body there is
+    parts.push(part);
+  }
   let body: any;
   try { body = JSON.parse(Buffer.concat(parts).toString("utf8")); } catch { throw new Refused("bad_request"); }
   if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !fields.includes(k))) {
@@ -120,6 +127,7 @@ async function siteSettings(_req: IncomingMessage, res: ServerResponse) {
       questionsPerMinute: limits.perVisitor.question, clipsPerMinute: limits.perVisitor.clip },
     listen: { encoding: "pcm_s16le", sampleRates: [8000, 16000] },
     messages: MESSAGES,
+    photos: Boolean(PHOTO_INDEX),
   });
 }
 
@@ -175,15 +183,19 @@ class Turn {
 const turns = new Map<string, Turn>(); // Labs chat id -> the Turn running on it: one answer at a time per chat
 
 async function chat(req: IncomingMessage, res: ServerResponse, _url: URL, who: string) {
-  const body = await jsonOf(req, ["text", "chatId"]);
-  const text = body.text;
+  const body = await jsonOf(req, ["text", "chatId", "photo"]);
+  const { text = "", photo } = body;
   let chatId: string | null = null;
-  if (typeof text !== "string" || !text.trim()) throw new Refused("bad_request");
-  if (chars(text) > QUESTION_CHARS) throw new Refused("too_long");
+  if (typeof text !== "string" || !(text.trim() || photo)) throw new Refused("bad_request");
+  if (photo !== undefined && !(PHOTO_INDEX && typeof photo === "string" && photo.startsWith("data:image/"))) {
+    throw new Refused("bad_request");
+  }
+  if (chars(text) > QUESTION_CHARS || (photo ?? "").length > PHOTO_CHARS) throw new Refused("too_long");
   if (body.chatId && !(chatId = unseal(body.chatId))) throw new Refused("not_found");
   const wait = limits.take("question", who);
   if (wait) throw new Refused("slow_down", wait);
   if (!budget.allows(who)) throw new Refused("budget_reached");
+  const question = photo ? `${text.trim() || "What is this?"}\n\n${await looksLike(who, photo)}` : text.trim();
   const turn = new Turn();
   if (chatId) {
     for (let running; (running = turns.get(chatId)); ) { // the last answer on this chat is still being written
@@ -195,7 +207,7 @@ async function chat(req: IncomingMessage, res: ServerResponse, _url: URL, who: s
   }
   let newId: string, upstream: Response;
   try {
-    [newId, upstream] = await ask(who, chatId, text.trim());
+    [newId, upstream] = await ask(who, chatId, question);
   } catch (e) {
     if (chatId) turns.delete(chatId);
     turn.finish(); // a question waiting for this chat may go ahead
@@ -205,6 +217,19 @@ async function chat(req: IncomingMessage, res: ServerResponse, _url: URL, who: s
   turns.set(newId, turn);
   void readAnswer(turn, newId, upstream);
   await stream(res, turn, newId);
+}
+
+/** The note added to a message with a photo: the catalogue's products that look most like it, closest first. */
+async function looksLike(who: string, photo: string): Promise<string> {
+  const res = await call(who, "POST", `/product-discovery/visual-search/indexes/${PHOTO_INDEX}/search`,
+    { imageBase64: photo, limit: 3, ...(PHOTO_MIN !== undefined && { minScore: PHOTO_MIN }) });
+  if (res.status === 413 || res.status === 422) { // too big, or not an image that can be read
+    throw new Refused(res.status === 413 ? "too_long" : "bad_request");
+  }
+  if (res.status !== 200) await labsRefused(res);
+  const names: string[] = (await res.json()).data.results.map((m: any) => m.data.title);
+  if (!names.length) return `${PHOTO_NOTE} Nothing in the catalogue looks like it.]`;
+  return `${PHOTO_NOTE} The catalogue's products that look most like it, closest first: ${names.join(", ")}.]`;
 }
 
 /** Sends the question, opening a chat first if there is none, or a new one if Labs says this one is gone or
@@ -484,10 +509,13 @@ async function transcript(_req: IncomingMessage, res: ServerResponse, url: URL, 
   const answer = await call(who, "GET", `/developer-platform/chats/${chatId}/messages`);
   if (answer.status === 404) throw new Refused("not_found");
   if (answer.status !== 200) await labsRefused(answer);
-  const out: { role: string; text: string; link: Link | null }[] = [];
+  const out: { role: string; text: string; link: Link | null; photo?: true }[] = [];
   for (const t of (await answer.json()).data.turns) {
     if (t.role === "user" && String(t.text ?? "").startsWith("(On screen now")) continue; // a note Labs adds after a search, not something the visitor said
-    if (t.role === "user" && t.text) out.push({ role: "user", text: t.text, link: null });
+    if (t.role === "user" && t.text) {
+      const at = t.text.indexOf(`\n\n${PHOTO_NOTE}`);
+      out.push(at < 0 ? { role: "user", text: t.text, link: null } : { role: "user", text: t.text.slice(0, at), link: null, photo: true });
+    }
     else if (t.role === "bot" && t.text) { // a bot turn with no text is a tool call: left out
       const items = sentences(t.text, true)[0].map(tidy).filter((i) => i !== null);
       out.push({
@@ -618,5 +646,6 @@ console.log(`origins:   ${[...guard.ORIGINS].sort().join(", ")}`);
 console.log(`limits:    ${limits.perVisitor.question} questions and ${limits.perVisitor.clip} clips a minute per visitor, `
   + `${limits.perSite.question} and ${limits.perSite.clip} for the site (in this process's memory)`);
 console.log(`budget:    ${budget.monthly} credits a month, ${budget.perVisitor} a day per visitor`);
+console.log(`photos:    ${PHOTO_INDEX ? `searched in ${PHOTO_INDEX}` : "off (site-setup/setup-07-photos turns them on)"}`);
 console.log(`open:      http://localhost:${guard.PORT}`);
 server.listen(guard.PORT, HOST);

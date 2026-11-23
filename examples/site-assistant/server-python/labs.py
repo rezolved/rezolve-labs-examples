@@ -15,6 +15,7 @@ for d in pathlib.Path(__file__).resolve().parents:  # the nearest .env above thi
 KEY = os.environ.get("LABS_API_KEY") or sys.exit("Set LABS_API_KEY in .env (copy env.example).")
 API = os.environ.get("LABS_BASE_URL") or "https://api.rezolvelabs.com/api/v1"
 AGENT = os.environ.get("LABS_AGENT_ID") or sys.exit("Set LABS_AGENT_ID in .env (site-setup/setup-02-create-agent makes one).")
+PHOTO_INDEX = os.environ.get("LABS_PHOTO_INDEX")  # site-setup/setup-07-photos makes it; without it, no photos in the chat
 UA = "labs-playbook-examples/1.0"  # every call sends an explicit User-Agent
 LIVE = API.replace("https://", "wss://", 1) + "/transcription/voices/transcriptions/live"
 FALLBACK = "Sorry, I couldn't put a reply together"  # how the platform's fallback sentence starts

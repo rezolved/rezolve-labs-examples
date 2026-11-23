@@ -51,6 +51,7 @@ when it fails.
 | `setup-04-knowledge` | Uploads the site's pages with their addresses; refreshes on publish | `LABS_KB_ID`, `out/knowledge.csv` |
 | `setup-05-snapshot-restore` | `save`, `list`, `restore <file>`: roll back a change | `snapshots/` |
 | `setup-06-catalogue` | Loads the owner's catalogue (`catalogue.source`) into a product search collection and adds a product desk the agent hands product questions to; run `setup-03` after it | `LABS_COLLECTION` |
+| `setup-07-photos` | Indexes the catalogue's photos (its `image_url` column) so the server takes a photo with a question; with a photo as its argument, shows the products it finds and their scores; run `setup-03` after it | `LABS_PHOTO_INDEX` |
 
 Without a `site-assistant.yaml` in `examples/`, the setup scripts use `site-setup/site-assistant.example.yaml`
 (a fictional bakery) and `site-setup/sample-site/`.
@@ -160,15 +161,16 @@ curl -s --max-time 30 -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" "$LABS_BASE_URL/
 
 ## Clean up
 
-`setup-02` creates an agent, `setup-04` a knowledge base and `setup-06` a product search collection; their ids are in
-`.env`. Delete them when you're done (skip a line whose id is empty), then empty `LABS_AGENT_ID`, `LABS_VOICE_ID`,
-`LABS_KB_ID` and `LABS_COLLECTION` in `.env`:
+`setup-02` creates an agent, `setup-04` a knowledge base, `setup-06` a product search collection and `setup-07` a
+photo index; their ids are in `.env`. Delete them when you're done (skip a line whose id is empty), then empty
+`LABS_AGENT_ID`, `LABS_VOICE_ID`, `LABS_KB_ID`, `LABS_COLLECTION` and `LABS_PHOTO_INDEX` in `.env`:
 
 ```bash
 set -a; . ../.env; set +a; LABS_BASE_URL=${LABS_BASE_URL:-https://api.rezolvelabs.com/api/v1}
 curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE agent -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/developer-platform/agents/$LABS_AGENT_ID"
 curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE knowledge base -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/unstructured-data/knowledge-bases/$LABS_KB_ID"
 curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE collection -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/product-discovery/collections/$LABS_COLLECTION"
+curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE photo index -> %{http_code} credits=%header{x-credits-charged}\n" "$LABS_BASE_URL/product-discovery/visual-search/indexes/$LABS_PHOTO_INDEX"
 ```
 
 Each line prints `-> 204` when the delete worked. Empty the ids afterwards: a stale `LABS_KB_ID` makes the next

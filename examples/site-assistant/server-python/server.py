@@ -18,7 +18,7 @@ import aiohttp, yaml
 from aiohttp import web
 
 import guard, labs
-from labs import (AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clip_key, correct, events, plain, respell, seal, sentences,
+from labs import (AGENT, FALLBACK, KEY, LIVE, PHOTO_INDEX, READ_MORE, UA, clip_key, correct, events, plain, respell, seal, sentences,
                   speech_body, unseal, verdict)
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -34,6 +34,9 @@ CLIENT = HERE.parent / "client" / "dist"
 CLIPS = pathlib.Path("out/clips")
 HOST = os.environ.get("HOST") or "127.0.0.1"
 QUESTION_CHARS, SPEECH_CHARS, LISTEN_SECONDS, FRAME_BYTES = 500, 300, 60, 64 * 1024
+PHOTO_CHARS = 1_500_000  # a photo as a data: URL; the widget sends one at most 1,024 pixels across, about 200 KB
+PHOTO_NOTE = "[The visitor sent a photo."  # how the note the server adds to a message with a photo starts
+PHOTO_MIN = (site.get("catalogue") or {}).get("photoMinScore")  # None: the photo model's own floor
 LIVE_PATH = "/transcription/voices/transcriptions/live"
 dumps = functools.partial(json.dumps, ensure_ascii=False, separators=(",", ":"))  # the same bytes as JSON.stringify
 
@@ -126,6 +129,8 @@ async def cors(request, response):
 async def json_of(request, fields):
     try:
         body = await request.json()
+    except web.HTTPRequestEntityTooLarge:
+        raise Refused("too_long")
     except (ValueError, UnicodeDecodeError):
         raise Refused("bad_request")
     if not isinstance(body, dict) or set(body) - set(fields):
@@ -147,6 +152,7 @@ async def site_settings(request):
                    "questionsPerMinute": limits.per_visitor["question"], "clipsPerMinute": limits.per_visitor["clip"]},
         "listen": {"encoding": "pcm_s16le", "sampleRates": [8000, 16000]},
         "messages": MESSAGES,
+        "photos": bool(PHOTO_INDEX),
     }, dumps=dumps)
 
 
@@ -192,11 +198,13 @@ turns = {}  # Labs chat id -> the Turn running on it: one answer at a time per c
 
 
 async def chat(request):
-    body = await json_of(request, ["text", "chatId"])
-    text, chat_id = body.get("text"), None
-    if not isinstance(text, str) or not text.strip():
+    body = await json_of(request, ["text", "chatId", "photo"])
+    text, photo, chat_id = body.get("text", ""), body.get("photo"), None
+    if not isinstance(text, str) or not (text.strip() or photo):
         raise Refused("bad_request")
-    if len(text) > QUESTION_CHARS:
+    if photo is not None and not (PHOTO_INDEX and isinstance(photo, str) and photo.startswith("data:image/")):
+        raise Refused("bad_request")
+    if len(text) > QUESTION_CHARS or len(photo or "") > PHOTO_CHARS:
         raise Refused("too_long")
     if body.get("chatId") and not (chat_id := unseal(body["chatId"])):
         raise Refused("not_found")
@@ -205,6 +213,8 @@ async def chat(request):
         raise Refused("slow_down", wait)
     if not budget.allows(who):
         raise Refused("budget_reached")
+    if photo:
+        text = f"{text.strip() or 'What is this?'}\n\n{await looks_like(who, photo)}"
     turn = Turn()
     if chat_id:
         while running := turns.get(chat_id):  # the last answer on this chat is still being written
@@ -223,6 +233,20 @@ async def chat(request):
     turns[new_id] = turn
     asyncio.create_task(read_answer(turn, new_id, upstream))
     return await stream(request, turn, new_id)
+
+
+async def looks_like(who, photo):
+    """The note added to a message with a photo: the catalogue's products that look most like it, closest first."""
+    query = {"imageBase64": photo, "limit": 3, **({"minScore": PHOTO_MIN} if PHOTO_MIN is not None else {})}
+    resp = await call(who, "POST", f"/product-discovery/visual-search/indexes/{PHOTO_INDEX}/search", query)
+    if resp.status in (413, 422):  # too big, or not an image that can be read
+        raise Refused("too_long" if resp.status == 413 else "bad_request")
+    if resp.status != 200:
+        await labs_refused(resp)
+    names = [m["data"]["title"] for m in (await resp.json())["data"]["results"]]
+    if not names:
+        return f"{PHOTO_NOTE} Nothing in the catalogue looks like it.]"
+    return f"{PHOTO_NOTE} The catalogue's products that look most like it, closest first: {', '.join(names)}.]"
 
 
 async def ask(who, chat_id, text):
@@ -527,7 +551,8 @@ async def transcript(request):
         if t.get("role") == "user" and t.get("text", "").startswith("(On screen now"):
             continue  # a note Labs adds after a search, not something the visitor said
         if t.get("role") == "user" and t.get("text"):
-            out.append({"role": "user", "text": t["text"], "link": None})
+            text, _, note = t["text"].partition(f"\n\n{PHOTO_NOTE}")
+            out.append({"role": "user", "text": text, "link": None, **({"photo": True} if note else {})})
         elif t.get("role") == "bot" and t.get("text"):  # a bot turn with no text is a tool call: left out
             items = [i for i in map(tidy, sentences(t["text"], final=True)[0]) if i]
             out.append({"role": "assistant", "text": " ".join(v for k, v in items if k == "sentence"),
@@ -570,7 +595,7 @@ async def session(app):
 def main():
     if not SITE_DIR.is_dir():
         sys.exit(f"No {SITE_DIR}/ here: run the server from examples/.")
-    app = web.Application(middlewares=[api])
+    app = web.Application(middlewares=[api], client_max_size=PHOTO_CHARS + 64 * 1024)
     app.cleanup_ctx.append(session)
     app.on_response_prepare.append(cors)
     app.router.add_get("/api/site", site_settings)
@@ -590,6 +615,7 @@ def main():
     print(f"limits:    {limits.per_visitor['question']} questions and {limits.per_visitor['clip']} clips a minute per visitor, "
           f"{limits.per_site['question']} and {limits.per_site['clip']} for the site (in this process's memory)")
     print(f"budget:    {budget.monthly} credits a month, {budget.per_visitor} a day per visitor")
+    print(f"photos:    {f'searched in {PHOTO_INDEX}' if PHOTO_INDEX else 'off (site-setup/setup-07-photos turns them on)'}")
     print(f"open:      http://localhost:{guard.PORT}")
     web.run_app(app, host=HOST, port=guard.PORT, print=None, access_log=None)
 

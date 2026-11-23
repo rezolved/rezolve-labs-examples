@@ -14,6 +14,7 @@ for (let d = dirname(fileURLToPath(import.meta.url)); ; d = dirname(d)) { // the
 export const KEY = process.env.LABS_API_KEY || fail("Set LABS_API_KEY in .env (copy env.example).");
 export const API = process.env.LABS_BASE_URL || "https://api.rezolvelabs.com/api/v1";
 export const AGENT = process.env.LABS_AGENT_ID || fail("Set LABS_AGENT_ID in .env (site-setup/setup-02-create-agent makes one).");
+export const PHOTO_INDEX = process.env.LABS_PHOTO_INDEX; // site-setup/setup-07-photos makes it; without it, no photos in the chat
 export const UA = "labs-playbook-examples/1.0"; // every call sends an explicit User-Agent
 export const LIVE = API.replace("https://", "wss://") + "/transcription/voices/transcriptions/live";
 export const FALLBACK = "Sorry, I couldn't put a reply together"; // how the platform's fallback sentence starts
