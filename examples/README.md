@@ -120,6 +120,17 @@ uv run python shop-assistant/server.py       # or: npx tsx shop-assistant/server
 
 Then open `http://localhost:8050`. See `shop-assistant/README.md`.
 
+### `hosted-store/`: a Rezolve commerce store driven from your server
+
+| File | Shows | Writes |
+|---|---|---|
+| `store-01-create` | Lists your stores; creates one (`"Name"`) or deletes the one in STORE_ID (`--delete`) | `STORE_ID` |
+| `store-02-catalogue` | Your catalogue CSV as the store's JSON records, uploaded as a job (`--replace` to overwrite) | — |
+| `store-03-shop` | Departments, a product, a basket, demonstration checkout, the order (`--no-checkout`) | an order in the store |
+| `VERIFY.md` | A sheet for a store owner to confirm all of the above on their own account | — |
+
+A store owner can confirm all of it with `hosted-store/VERIFY.md`.
+
 ## From nothing to a talking agent
 
 ```bash
