@@ -77,14 +77,20 @@ elif command == "list":
               f"voice {snap['agent']['voiceId']}")
 elif command == "restore" and len(sys.argv) > 2:
     snap = json.loads(pathlib.Path(sys.argv[2]).read_text())
+    def put_flow():
+        return labs("PUT", f"/developer-platform/agents/{AGENT}/flow", {
+            "baseVersion": read_flow()["version"], "nodes": snap["flow"]["nodes"], "edges": snap["flow"]["edges"],
+            "meta": snap["flow"]["meta"]})
+
     # The agent's fields first: a PATCH can itself save a flow version, so the flow goes back last.
-    status, _, _ = labs("PATCH", f"/developer-platform/agents/{AGENT}", {k: v for k, v in snap["agent"].items() if v is not None})
+    fields = {k: v for k, v in snap["agent"].items() if v is not None}
+    status, _, _ = labs("PATCH", f"/developer-platform/agents/{AGENT}", fields)
+    if status == 400:  # PATCH checks the current flow: a broken one (a route to a missing step) goes back first
+        put_flow()
+        status, _, _ = labs("PATCH", f"/developer-platform/agents/{AGENT}", fields)
     if status != 200:
         sys.exit("Nothing was restored: see the body above.")
-    current = read_flow()
-    status, _, body = labs("PUT", f"/developer-platform/agents/{AGENT}/flow", {
-        "baseVersion": current["version"], "nodes": snap["flow"]["nodes"], "edges": snap["flow"]["edges"],
-        "meta": snap["flow"]["meta"]})
+    status, _, body = put_flow()
     if status != 200:
         sys.exit("The agent's fields are restored, but the flow is not: see the body above.")
     print(f"restored: agent fields put back; flow version {snap['flow']['version']} saved again as version "

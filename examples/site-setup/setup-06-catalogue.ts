@@ -85,6 +85,8 @@ const rows = csv(readFileSync(catalogue.source, "utf8"));
 const columns = rows.length ? Object.keys(rows[0]) : [];
 const missing = REQUIRED.filter((c) => !columns.includes(c));
 if (missing.length) fail(`The catalogue needs the columns ${REQUIRED.join(", ")}; it has no ${missing.join(", ")}.`);
+const bad = rows.filter((r) => !/^[0-9]+(\.[0-9]+)?$/.test(r.price.trim())).map((r) => r.id);
+if (bad.length) fail(`A price must be a plain number, such as 6.50, with no currency sign; not in ${bad.slice(0, 10).join(", ")}.`);
 
 /** One catalogue row as a product: id, title, price and currency, then every other column as it is. An
  * `image_url` that is a web address goes along as the product's picture. */

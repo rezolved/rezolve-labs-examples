@@ -66,6 +66,8 @@ rows = list(csv.DictReader(open(catalogue["source"], encoding="utf-8-sig", newli
 columns = list(rows[0]) if rows else []
 if missing := [c for c in REQUIRED if c not in columns]:
     sys.exit(f"The catalogue needs the columns {', '.join(REQUIRED)}; it has no {', '.join(missing)}.")
+if bad := [r["id"] for r in rows if not re.fullmatch(r"[0-9]+(\.[0-9]+)?", r["price"].strip())]:
+    sys.exit(f"A price must be a plain number, such as 6.50, with no currency sign; not in {', '.join(bad[:10])}.")
 
 
 def product(r):

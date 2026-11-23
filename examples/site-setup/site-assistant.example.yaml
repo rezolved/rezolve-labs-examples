@@ -42,7 +42,7 @@ knowledge:
   refreshOnPublish: true
 catalogue:
   source: ""                    # the owner's product catalogue (CSV), relative to where the scripts run; empty: none
-  currency: GBP                 # the prices' currency, as an ISO 4217 code
+  currency: EUR                 # the prices' currency, as an ISO 4217 code
 
 # Q6. Pages it may point to, aliases, home, in-page anchors? (the owner's answer)
 routes:

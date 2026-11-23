@@ -52,9 +52,12 @@ async function data_of(res: Response | Promise<Response>, what: string): Promise
   return (await answer.json()).data;
 }
 
+const SYMBOLS: Record<string, string> = { EUR: "€", GBP: "£", USD: "$" }; // the price example in the product desk's instructions
+
 /** The whole instructions text, from the answers alone: the agent's, or with desk=true its product desk's, the
- * step setup-06 adds for the catalogue. The two differ only in where their answers come from. */
-function build(site: any, desk = false): string {
+ * step setup-06 adds for the catalogue. The two differ only in where their answers come from. handoff=false leaves
+ * out the hand-off to a desk the agent doesn't have yet. */
+function build(site: any, desk = false, handoff = true): string {
   const { storeName: store, persona, style, answerStyle: size } = site;
   const catalogue = site.catalogue ?? {};
   const contact = site.contact.path;
@@ -66,13 +69,14 @@ function build(site: any, desk = false): string {
   if (desk) {
     lines.push("", `Answer questions about ${store}'s products from the catalogue you search. Name each product exactly `
       + "as the catalogue does, capitals included. Give "
-      + `prices in ${catalogue.currency} with the currency's symbol, such as £4.50, not its code. Never name a `
+      + `prices in ${catalogue.currency} with the currency's symbol, such as `
+      + `${SYMBOLS[catalogue.currency] ?? catalogue.currency + " "}4.50, not its code. Never name a `
       + `product, price or detail the search didn't return; if nothing fits, say so and offer the contact page `
-      + `(${contact}).`);
+      + `(${contact}). The visitor sees and hears only your words: never mention a screen, cards or pictures.`);
   } else {
     lines.push("", "Answer only from the knowledge base and these instructions. If the answer is not there, say you "
       + `don't know and offer the contact page (${contact}).`);
-    if (catalogue.source) { // the catalogue is the product desk's: a step can't search pages and products
+    if (catalogue.source && handoff) { // the catalogue is the desk's: a step can't search pages and products
       lines.push("For any question about a product, its price or what we sell, call transfer_to_product_desk and "
         + "say nothing yourself.");
     }
@@ -133,12 +137,16 @@ for (const attempt of [1, 2]) { // a 409 means someone saved since we read: read
   if (!flow.nodes.length) fail("This agent has no flow yet: create it with instructions (setup-02).");
   const entry = flow.nodes.find((n: any) => n.type === "initial") ?? flow.nodes[0];
   const desk = flow.nodes.find((n: any) => n.data.product_search_collection);
-  if (deskText && !desk) console.log("note:     no product desk yet: run setup-06-catalogue, then this again");
-  if (entry.data.prompt.value === instructions && (!desk || !deskText || desk.data.prompt.value === deskText)) {
+  let text = instructions;
+  if (deskText && !desk) { // no desk yet: a hand-off to it would fail, so the pages answer everything for now
+    text = build(site, false, false);
+    console.log("note:     no product desk yet: run setup-06-catalogue, then this again");
+  }
+  if (entry.data.prompt.value === text && (!desk || !deskText || desk.data.prompt.value === deskText)) {
     console.log(`unchanged: flow version ${flow.version} already has these instructions`);
     process.exit(0);
   }
-  entry.data.prompt = { type: "inline", value: instructions };
+  entry.data.prompt = { type: "inline", value: text };
   if (desk && deskText) desk.data.prompt = { type: "inline", value: deskText };
   res = await labs("PUT", `/developer-platform/agents/${agent}/flow`, { baseVersion: flow.version, nodes: flow.nodes, edges: flow.edges });
   if (res.status !== 409 || attempt === 2) break;
