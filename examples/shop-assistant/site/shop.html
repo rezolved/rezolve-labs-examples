@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --panel: #fffdf9; --ink: #2b2723; --ink-2: #6f675f; --line: #e4ddd3;
+    --accent: #3d5a47; --accent-ink: #fff; --soft: #ece6dc; --warn: #9a3b2e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  h1, h2, .serif { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-weight: 500; }
+
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+           background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 24px; letter-spacing: .01em; }
+  header nav { display: flex; gap: 4px; margin-left: 12px; flex-wrap: wrap; }
+  header nav button { border: 0; background: none; padding: 6px 10px; border-radius: 999px; color: var(--ink-2); }
+  header nav button[aria-pressed="true"] { background: var(--soft); color: var(--ink); }
+  .bag-btn { margin-left: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 14px; }
+  .bag-btn b { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 12px; text-align: center; }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; padding: 24px; max-width: 1480px; margin: 0 auto; }
+  .hero { margin: 0 0 20px; }
+  .hero h2 { margin: 0 0 4px; font-size: 30px; }
+  .hero p { margin: 0; color: var(--ink-2); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; transition: box-shadow .2s, transform .2s; }
+  .tile.hit { box-shadow: 0 0 0 2px var(--accent); transform: translateY(-2px); }
+  .tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: var(--soft); display: block; }
+  .tile .meta { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .tile .name { font-weight: 550; }
+  .tile .sub { color: var(--ink-2); font-size: 13px; }
+  .tile .row { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 8px; }
+  .tile .ask { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+
+  aside.assistant { position: sticky; top: 84px; height: calc(100vh - 108px); display: flex; flex-direction: column;
+                    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .a-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-family: Georgia, serif; font-size: 18px; position: relative; }
+  .avatar.speaking::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--accent); animation: pulse 1.2s ease-out infinite; }
+  @keyframes pulse { from { opacity: .9; transform: scale(.95); } to { opacity: 0; transform: scale(1.25); } }
+  .a-head .who { line-height: 1.2; }
+  .a-head .who small { color: var(--ink-2); }
+  .a-head .sound { margin-left: auto; border: 1px solid var(--line); background: none; border-radius: 999px; padding: 4px 10px; font-size: 13px; }
+  .log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { flex-shrink: 0; max-width: 88%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; }
+  .msg.bot { background: var(--soft); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg.me { background: var(--accent); color: var(--accent-ink); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.note { align-self: center; background: none; color: var(--ink-2); font-size: 13px; padding: 0; }
+  .msg.err { align-self: center; background: none; color: var(--warn); font-size: 13px; padding: 0; }
+  .cards { flex-shrink: 0; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; }
+  .card { flex: 0 0 150px; scroll-snap-align: start; background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 13px; display: flex; flex-direction: column; }
+  .card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: var(--soft); }
+  .card .meta { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .card .name { font-weight: 550; line-height: 1.25; }
+  .card .acts { display: flex; gap: 4px; flex-wrap: wrap; margin-top: auto; }
+  .card .acts button { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+  .card .acts button:first-child { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .typing { align-self: flex-start; color: var(--ink-2); font-size: 13px; }
+  .compose { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  .compose input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 10px 14px; font: inherit; background: #fff; color: var(--ink); }
+  .compose button { border: 0; border-radius: 999px; padding: 0 14px; background: var(--accent); color: var(--accent-ink); }
+  .compose .mic { width: 44px; padding: 0; background: var(--soft); color: var(--ink); }
+  .compose .mic.on { background: var(--warn); color: #fff; }
+  .suggest { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
+  .suggest button { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--ink-2); }
+
+  dialog.bag { border: 0; padding: 0; margin: 0 0 0 auto; height: 100%; max-height: 100%; width: min(400px, 100%); background: var(--panel); color: var(--ink); box-shadow: -8px 0 30px rgba(0,0,0,.12); }
+  dialog.bag::backdrop { background: rgba(30, 25, 20, .3); }
+  .bag-in { display: flex; flex-direction: column; height: 100%; }
+  .bag-in h2 { margin: 0; padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; }
+  .bag-in h2 button { margin-left: auto; border: 0; background: none; font-size: 22px; line-height: 1; }
+  .lines { flex: 1; overflow-y: auto; padding: 12px 20px; }
+  .line { display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .line img { width: 56px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--soft); }
+  .line small { color: var(--ink-2); }
+  .bag-foot { padding: 16px 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+  .total { display: flex; justify-content: space-between; font-size: 17px; }
+  .pay { display: block; width: 100%; text-align: center; padding: 11px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); border: 0; }
+  .pay[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 16px; }
+    aside.assistant { position: static; height: 70vh; order: -1; }
+    header { padding: 12px 16px; }
+    header nav { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="store">Shop</h1>
+  <nav id="depts" aria-label="Departments"></nav>
+  <button class="bag-btn" id="bagBtn" type="button">Basket <b id="bagCount">0</b></button>
+</header>
+
+<main>
+  <section>
+    <div class="hero">
+      <h2 id="tagline">Find what you're looking for</h2>
+      <p>Ask Alex, our personal shopper, anything about the range, sizes or delivery. Type, or hold the microphone and talk.</p>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <aside class="assistant" aria-label="Shopping assistant">
+    <div class="a-head">
+      <div class="avatar" id="avatar">A</div>
+      <div class="who"><b>Alex</b><br><small>Personal shopper</small></div>
+      <button class="sound" id="sound" type="button" aria-pressed="true">Voice on</button>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="suggest" id="suggest"></div>
+    <form class="compose" id="compose">
+      <button class="mic" id="mic" type="button" title="Hold to talk" aria-label="Hold to talk">🎙</button>
+      <input id="text" autocomplete="off" placeholder="Ask about sizes, outfits, delivery…" maxlength="500">
+      <button type="submit">Send</button>
+    </form>
+  </aside>
+</main>
+
+<dialog class="bag" id="bag">
+  <div class="bag-in">
+    <h2 class="serif">Your basket <button type="button" id="bagClose" aria-label="Close">×</button></h2>
+    <div class="lines" id="lines"><p class="sub">Nothing in your basket yet.</p></div>
+    <div class="bag-foot">
+      <div class="total"><span>Total</span><b id="total">£0.00</b></div>
+      <button class="pay" id="pay" type="button" aria-disabled="true">Check out</button>
+      <small class="sub">A demonstration shop: no payment is taken.</small>
+    </div>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+// The page talks only to its own server (server.py or server.ts), never to Labs: the key stays on the server.
+const $ = (id) => document.getElementById(id);
+const state = { chatId: null, busy: false, voice: true, products: [], symbol: "£", cart: { items: [], total: "0" } };
+const money = (v) => `${state.symbol}${Number(v).toFixed(Number(v) % 1 ? 2 : 0)}`;
+const shown = (text) => text.replace(/\[[a-z][a-z ]{0,20}\]\s*/gi, "");  // delivery cues are for the voice, not the screen
+
+// ── Storefront ──────────────────────────────────────────────────────────────────────────────────────────────
+async function loadShop() {
+  const shop = await (await fetch("/api/shop")).json();
+  state.products = shop.products; state.symbol = shop.currencySymbol;
+  $("store").textContent = document.title = shop.storeName;
+  const depts = ["All", ...new Set(shop.products.map((p) => p.category))];
+  $("depts").replaceChildren(...depts.map((d, i) => {
+    const b = el("button", { type: "button", "aria-pressed": String(i === 0) }, d);
+    b.onclick = () => { for (const x of $("depts").children) x.setAttribute("aria-pressed", String(x === b)); showGrid(d); };
+    return b;
+  }));
+  showGrid("All");
+  say(shown(shop.welcome), "bot");
+  speak(shop.welcome);  // plays once the browser allows sound (after the first click or key press)
+  suggestions(["I need an outfit for a summer wedding", "A warm jumper under 80", "What's your returns policy?"]);
+}
+
+function showGrid(dept) {
+  $("grid").replaceChildren(...state.products.filter((p) => dept === "All" || p.category === dept).map((p) => {
+    const ask = el("button", { class: "ask", type: "button" }, "Ask Alex");
+    ask.onclick = () => send(`Tell me about the ${p.name}.`);
+    return el("article", { class: "tile", "data-id": p.id },
+      el("img", { src: p.image || "", alt: p.name, loading: "lazy" }),
+      el("div", { class: "meta" }, el("span", { class: "name" }, p.name), el("span", { class: "sub" }, [p.colour, p.sizes].filter(Boolean).join(" · ")),
+        el("div", { class: "row" }, el("b", {}, money(p.price)), ask)));
+  }));
+}
+
+// ── Conversation ────────────────────────────────────────────────────────────────────────────────────────────
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  n.append(...kids);
+  return n;
+}
+function say(text, who) {
+  const n = el("div", { class: `msg ${who}` }, text);
+  $("log").append(n); $("log").scrollTop = $("log").scrollHeight;
+  return n;
+}
+function suggestions(list) {
+  $("suggest").replaceChildren(...list.map((s) => { const b = el("button", { type: "button" }, s); b.onclick = () => send(s); return b; }));
+}
+
+async function send(text) {
+  text = text.trim();
+  if (!text || state.busy) return;
+  state.busy = true; stopSpeaking(); suggestions([]);
+  say(text, "me");
+  const typing = el("div", { class: "typing" }, "Alex is typing…");
+  $("log").append(typing);
+  let bubble = null, said = "", spoken = false, holding = false;
+  try {
+    const resp = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ chatId: state.chatId, text }) });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.message || `HTTP ${resp.status}`); }
+    for await (const [event, data] of events(resp)) {
+      if (event === "chat") state.chatId = data.chatId;
+      else if (event === "tool" && !said && !holding) { holding = true; speak(holdingLine(data.name)); }
+      else if (event === "delta") {
+        typing.remove();
+        said += data.text;
+        if (!bubble) bubble = say("", "bot");
+        bubble.textContent = shown(said).trim();
+      }
+      else if (event === "spoken") { spoken = true; speakReply(data.text); }  // the whole reply, with its delivery cues
+      else if (event === "cards") showCards(data.cards);
+      else if (event === "cart") showBasket(data);
+      else if (event === "error") say(data.message || "Something went wrong.", "err");
+      $("log").scrollTop = $("log").scrollHeight;
+    }
+    if (!spoken && said.trim()) speakReply(said);
+  } catch (e) {
+    say(`Alex couldn't answer: ${e.message}`, "err");
+  } finally {
+    typing.remove(); state.busy = false;
+  }
+}
+
+async function* events(resp) {  // text/event-stream -> [event, data]
+  const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buf += value;
+    let cut;
+    while ((cut = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, cut); buf = buf.slice(cut + 2);
+      const event = /^event: (.*)$/m.exec(block)?.[1], data = /^data: (.*)$/m.exec(block)?.[1];
+      if (event) yield [event, data ? JSON.parse(data) : {}];
+    }
+  }
+}
+
+function showCards(cards) {
+  for (const t of document.querySelectorAll(".tile.hit")) t.classList.remove("hit");
+  const row = el("div", { class: "cards" }, ...cards.map((c) => {
+    document.querySelector(`.tile[data-id="${c.id}"]`)?.classList.add("hit");
+    const acts = c.actions.map((a) => { const b = el("button", { type: "button" }, a.name); b.onclick = () => send(a.message); return b; });
+    return el("div", { class: "card" }, el("img", { src: c.image || "", alt: c.name }),
+      el("div", { class: "meta" }, el("span", { class: "name" }, c.name),
+        el("span", {}, `${money(c.price)}${c.colour ? " · " + c.colour : ""}`), el("div", { class: "acts" }, ...acts)));
+  }));
+  $("log").append(row);
+}
+
+function showBasket(cart) {
+  const count = cart.items.reduce((n, l) => n + Number(l.quantity || 1), 0);
+  $("bagCount").textContent = count;
+  $("total").textContent = money(cart.total);
+  $("lines").replaceChildren(...(cart.items.length ? cart.items.map((l) =>
+    el("div", { class: "line" }, el("img", { src: l.image || "", alt: "" }),
+      el("div", {}, el("b", {}, l.name), el("br"), el("small", {}, [l.size && `Size ${l.size}`, `Qty ${l.quantity}`].filter(Boolean).join(" · "))),
+      el("span", {}, money(l.unitPrice * l.quantity)))) : [el("p", { class: "sub" }, "Nothing in your basket yet.")]));
+  state.cart = cart;
+  $("pay").setAttribute("aria-disabled", String(!count));
+  say(`Basket: ${count} item${count === 1 ? "" : "s"}, ${money(cart.total)}`, "note");
+}
+
+function checkOut() {  // the agent can't take payment: the page confirms a demonstration order and starts a new basket
+  const { items, total } = state.cart;
+  if (!items.length) return;
+  const ref = "ORD-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+  $("bag").close();
+  say(`Order ${ref} placed: ${items.map((l) => l.name + (l.size ? ` (${l.size})` : "")).join(", ")}, ${money(total)}. This is a demonstration shop, so no payment was taken.`, "note");
+  showBasket({ items: [], total: "0" });
+  state.chatId = null;  // a new chat, and with it a new, empty basket
+  speak("[cheerfully] Thank you. Your order is placed. [warmly] It was lovely helping you today.");
+}
+
+$("compose").onsubmit = (e) => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
+$("bagBtn").onclick = () => $("bag").showModal();
+$("bagClose").onclick = () => $("bag").close();
+$("pay").onclick = checkOut;
+
+// ── Voice out: each sentence spoken in the agent's voice, in order ─────────────────────────────────────────
+const queue = [];
+let current = null;
+const HOLDING = ["[warmly] One moment.", "[warmly] Let me have a look.", "[warmly] I'm looking now."];
+let lastHolding = -1;
+function holdingLine() { lastHolding = (lastHolding + 1 + Math.floor(Math.random() * (HOLDING.length - 1))) % HOLDING.length; return HOLDING[lastHolding]; }
+
+function speakReply(text) {  // one clip per sentence; a sentence without a cue keeps the one before it
+  let cue = "";
+  for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
+    cue = /^\[[a-z][a-z ]{0,20}\]/i.exec(sentence)?.[0] ?? cue;
+    speak(sentence.startsWith("[") || !cue ? sentence : `${cue} ${sentence}`);
+  }
+}
+function speak(text) {
+  text = text.trim();
+  if (!state.voice || !text) return;
+  const audio = new Audio(`/api/speech?text=${encodeURIComponent(text)}`);  // starts loading now, plays in turn
+  audio.preload = "auto";
+  queue.push(audio);
+  if (!current) next();
+}
+function next() {
+  current = queue.shift() || null;
+  $("avatar").classList.toggle("speaking", !!current);
+  if (!current) return;
+  current.onended = current.onerror = next;
+  current.play().catch(() => { queue.unshift(current); current = null; $("avatar").classList.remove("speaking"); });
+}
+function stopSpeaking() {
+  for (const a of [current, ...queue]) if (a) { a.pause(); a.src = ""; }
+  queue.length = 0; current = null; $("avatar").classList.remove("speaking");
+}
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { if (!current && queue.length) next(); });  // sound needs a gesture first
+$("sound").onclick = () => {
+  state.voice = !state.voice;
+  $("sound").textContent = state.voice ? "Voice on" : "Voice off";
+  $("sound").setAttribute("aria-pressed", String(state.voice));
+  if (!state.voice) stopSpeaking();
+};
+
+// ── Voice in: hold the microphone, release to send (recorded, made into 16 kHz WAV, transcribed by the server) ─
+let recorder = null, chunks = [], held = false;
+async function startTalking() {
+  if (recorder || state.busy) return;
+  stopSpeaking();  // talking over Alex interrupts
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    recorder = new MediaRecorder(stream); chunks = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = () => { stream.getTracks().forEach((t) => t.stop()); transcribe(new Blob(chunks)); };
+    recorder.start(); $("mic").classList.add("on");
+    if (!held) stopTalking();  // released before the microphone opened
+  } catch { say("The microphone isn't available. You can type instead.", "err"); }
+}
+function stopTalking() {
+  if (!recorder) return;
+  recorder.stop(); recorder = null; $("mic").classList.remove("on");
+}
+async function transcribe(blob) {
+  const note = say("Listening…", "note");
+  try {
+    const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
+    if (decoded.duration < 0.4) { note.remove(); return; }
+    const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+    const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();
+    const resp = await fetch("/api/listen", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav(await off.startRendering()) });
+    const data = await resp.json();
+    note.remove();
+    if (!resp.ok) throw new Error(data.message);
+    if (data.text) send(data.text); else say("I didn't catch that. Try again, or type it.", "note");
+  } catch (e) { note.remove(); say(`Couldn't hear that: ${e.message}`, "err"); }
+}
+function wav(buffer) {  // mono 16-bit PCM
+  const pcm = buffer.getChannelData(0), out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const str = (o, s) => [...s].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF"); out.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVEfmt "); out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true); out.setUint16(22, 1, true); out.setUint32(24, buffer.sampleRate, true);
+  out.setUint32(28, buffer.sampleRate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  str(36, "data"); out.setUint32(40, pcm.length * 2, true);
+  pcm.forEach((s, i) => out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  return out.buffer;
+}
+$("mic").addEventListener("pointerdown", (e) => { e.preventDefault(); held = true; startTalking(); });
+for (const ev of ["pointerup", "pointerleave", "pointercancel"]) $("mic").addEventListener(ev, () => { held = false; stopTalking(); });
+
+loadShop();
+</script>
+</body>
+</html>
