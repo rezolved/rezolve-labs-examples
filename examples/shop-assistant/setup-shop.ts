@@ -72,9 +72,18 @@ function setEnv(name: string, value: string) {
 
 /** A CSV file as rows keyed by its header: commas inside double quotes stay, "" is a quote. */
 function csv(text: string): Record<string, string>[] {
-  const lines = text.trim().split("\n").map((line) =>
-    [...line.matchAll(/("(?:[^"]|"")*"|[^,]*)(?:,|$)/g)].map((m) => m[1].replace(/^"|"$/g, "").replaceAll('""', '"')).slice(0, -1));
-  const [head, ...body] = lines;
+  const rows: string[][] = [[""]];
+  let quoted = false;
+  text = text.replace(/^\uFEFF/, ""); // a byte-order mark, as some spreadsheets save one
+  for (let i = 0; i < text.length; i++) { // read as Python's csv module reads it: a quoted field may hold , " and line breaks
+    const c = text[i], row = rows[rows.length - 1];
+    if (quoted && c === '"' && text[i + 1] === '"') { row[row.length - 1] += '"'; i++; }
+    else if (c === '"') quoted = !quoted;
+    else if (!quoted && c === ",") row.push("");
+    else if (!quoted && (c === "\n" || c === "\r")) { if (c === "\r" && text[i + 1] === "\n") i++; rows.push([""]); }
+    else row[row.length - 1] += c;
+  }
+  const [head, ...body] = rows.filter((r) => r.length > 1 || r[0] !== ""); // blank lines and a last line break
   return body.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
 
@@ -137,7 +146,9 @@ console.log(`catalogue: ${collection}, ${products.length} products searchable af
 // 2. The agent: created once, then each run saves the instructions as a new flow version.
 let agent = process.env.SHOP_AGENT_ID;
 if (agent && (await labs("GET", `/developer-platform/agents/${agent}`)).status !== 200) agent = undefined;
-if (agent) {
+if (agent) { // what an update takes first (a new store name saves a flow version), then the instructions
+  await data_of(labs("PATCH", `/developer-platform/agents/${agent}`,
+    { name: shop.agentName, storeName: shop.storeName, ...(shop.voiceId ? { voiceId: shop.voiceId } : {}) }), "Could not update the agent");
   const flow = await data_of(labs("GET", `/developer-platform/agents/${agent}/flow`), "Could not read the agent's flow");
   const entry = flow.nodes.find((n: any) => n.type === "initial") ?? flow.nodes[0];
   entry.data.prompt.value = text;

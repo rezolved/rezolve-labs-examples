@@ -53,10 +53,19 @@ function fail(message: string): never {
 
 /** A CSV file as rows keyed by its header: commas inside double quotes stay, "" is a quote. */
 function csv(text: string): Row[] {
-  const lines = text.trim().split("\n").map((line) =>
-    [...line.matchAll(/("(?:[^"]|"")*"|[^,]*)(?:,|$)/g)].map((m) => m[1].replace(/^"|"$/g, "").replaceAll('""', '"')).slice(0, -1));
-  const [head, ...rows] = lines;
-  return rows.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
+  const rows: string[][] = [[""]];
+  let quoted = false;
+  text = text.replace(/^\uFEFF/, ""); // a byte-order mark, as some spreadsheets save one
+  for (let i = 0; i < text.length; i++) { // read as Python's csv module reads it: a quoted field may hold , " and line breaks
+    const c = text[i], row = rows[rows.length - 1];
+    if (quoted && c === '"' && text[i + 1] === '"') { row[row.length - 1] += '"'; i++; }
+    else if (c === '"') quoted = !quoted;
+    else if (!quoted && c === ",") row.push("");
+    else if (!quoted && (c === "\n" || c === "\r")) { if (c === "\r" && text[i + 1] === "\n") i++; rows.push([""]); }
+    else row[row.length - 1] += c;
+  }
+  const [head, ...body] = rows.filter((r) => r.length > 1 || r[0] !== ""); // blank lines and a last line break
+  return body.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
 
 /** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. */

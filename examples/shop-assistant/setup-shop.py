@@ -132,7 +132,10 @@ print(f"catalogue: {collection}, {len(products)} products searchable after {time
 agent = os.environ.get("SHOP_AGENT_ID")
 if agent and labs("GET", f"/developer-platform/agents/{agent}")[0] != 200:
     agent = None
-if agent:
+if agent:  # what an update takes first (a new store name saves a flow version), then the instructions
+    data_of(labs("PATCH", f"/developer-platform/agents/{agent}", {"name": shop["agentName"], "storeName": shop["storeName"],
+                                                                  **({"voiceId": shop["voiceId"]} if shop.get("voiceId") else {})}),
+            "Could not update the agent")
     flow = data_of(labs("GET", f"/developer-platform/agents/{agent}/flow"), "Could not read the agent's flow")
     entry = next((n for n in flow["nodes"] if n.get("type") == "initial"), flow["nodes"][0])
     entry["data"]["prompt"]["value"] = text
