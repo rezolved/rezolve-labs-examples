@@ -52,9 +52,15 @@ def data_of(answer, what):
     return json.loads(body)["data"]
 
 
-def build(site):
-    """The whole instructions text, from the answers alone."""
+SYMBOLS = {"EUR": "€", "GBP": "£", "USD": "$"}  # the price example in the product desk's instructions
+
+
+def build(site, desk=False, handoff=True):
+    """The whole instructions text, from the answers alone: the agent's, or with desk=True its product desk's, the
+    step setup-06 adds for the catalogue. The two differ only in where their answers come from. handoff=False leaves
+    out the hand-off to a desk the agent doesn't have yet."""
     store, persona, style, size = site["storeName"], site["persona"], site["style"], site["answerStyle"]
+    catalogue = site.get("catalogue") or {}
     contact = site["contact"]["path"]
     pages = site["followUp"]["offerNavigation"] and site["navigation"]["enabled"] and site["routes"]
     if persona["voice"] == "person":
@@ -62,16 +68,28 @@ def build(site):
                  "The welcome has introduced you: don't introduce yourself again in an answer."]
     else:
         lines = [f'You are the website assistant for {store}. Speak for the business as "we".']
-    lines += ["", "Answer only from the knowledge base and these instructions. If the answer is not there, say you don't "
-              f"know and offer the contact page ({contact}).",
-              "", "How to answer:",
+    if desk:
+        lines += ["", f"Answer questions about {store}'s products from the catalogue you search. Name each product exactly "
+                  "as the catalogue does, capitals included. Give "
+                  f"prices in {catalogue['currency']} with the currency's symbol, such as "
+                  f"{SYMBOLS.get(catalogue['currency'], catalogue['currency'] + ' ')}4.50, not its code. Never name a "
+                  f"product, price or detail the search didn't return; if nothing fits, say so and offer the contact page "
+                  f"({contact}). The visitor sees and hears only your words: never mention a screen, cards or pictures."]
+    else:
+        lines += ["", "Answer only from the knowledge base and these instructions. If the answer is not there, say you "
+                  f"don't know and offer the contact page ({contact})."]
+        if catalogue.get("source") and handoff:  # the catalogue is the desk's: a step can't search pages and products
+            lines.append("For any question about a product, its price or what we sell, call transfer_to_product_desk and "
+                         "say nothing yourself.")
+    lines += ["", "How to answer:",
               f"- Your answers are read aloud. Use at most {size['spokenMaxWords']} words in {size['spokenMaxSentences']} "
               f"sentence{'' if size['spokenMaxSentences'] == 1 else 's'}. If the visitor asks for more detail, use up to "
               f"{size['textMaxWords']} words.",
               "- Write plain sentences only: no markdown, lists, headings, bold, links or emoji.",
               f"- Tone: {style['tone']}. Use {style['spelling']} spelling, "
               f"{'with' if style['serialComma'] else 'without'} the serial comma."]
-    spellings = list(dict.fromkeys(style["brandSpellings"] + site["vocabulary"]))  # each once, in order
+    # each once, in order; the desk names products as the catalogue spells them, so it keeps the brand's only
+    spellings = list(dict.fromkeys(style["brandSpellings"] + ([] if desk else site["vocabulary"])))
     if spellings:
         lines.append(f"- Spell these exactly as written: {', '.join(spellings)}.")
     heard = [f'read "{alike}" as {word}' for word, alikes in (site.get("soundAlikes") or {}).items() for alike in alikes]
@@ -98,13 +116,17 @@ def build(site):
 
 site = yaml.safe_load(ANSWERS.read_text())
 instructions = build(site)
+desk_text = build(site, desk=True) if (site.get("catalogue") or {}).get("source") else None
 print(f"answers:  {os.path.relpath(ANSWERS)}")
-print(f"built:    {len(instructions)} characters (limit {LIMIT})")
-if len(instructions) > LIMIT:
-    sys.exit(f"Too long by {len(instructions) - LIMIT} characters: shorten the answers, or move facts into the "
-             "knowledge base (setup-04).")
+print(f"built:    {len(instructions)} characters (limit {LIMIT})"
+      + (f"; the product desk {len(desk_text)}" if desk_text else ""))
+if max(len(instructions), len(desk_text or "")) > LIMIT:
+    sys.exit(f"Too long by {max(len(instructions), len(desk_text or '')) - LIMIT} characters: shorten the answers, or "
+             "move facts into the knowledge base (setup-04).")
 if "--dry-run" in sys.argv:
     print("\n" + instructions, end="")
+    if desk_text:
+        print("\n--- the product desk ---\n" + desk_text, end="")
     sys.exit(0)
 
 agent = os.environ.get("LABS_AGENT_ID") or sys.exit("Set LABS_AGENT_ID in .env (setup-02 makes one).")
@@ -113,10 +135,18 @@ for attempt in (1, 2):  # a 409 means someone saved since we read: read again an
     if not flow["nodes"]:
         sys.exit("This agent has no flow yet: create it with instructions (setup-02).")
     entry = next((n for n in flow["nodes"] if n.get("type") == "initial"), flow["nodes"][0])
-    if entry["data"]["prompt"]["value"] == instructions:
+    desk = next((n for n in flow["nodes"] if n["data"].get("product_search_collection")), None)
+    text = instructions
+    if desk_text and not desk:  # no desk yet: a hand-off to it would fail, so the pages answer everything for now
+        text = build(site, handoff=False)
+        print("note:     no product desk yet: run setup-06-catalogue, then this again")
+    if entry["data"]["prompt"]["value"] == text and (not desk or not desk_text
+                                                    or desk["data"]["prompt"]["value"] == desk_text):
         print(f"unchanged: flow version {flow['version']} already has these instructions")
         sys.exit(0)
-    entry["data"]["prompt"] = {"type": "inline", "value": instructions}
+    entry["data"]["prompt"] = {"type": "inline", "value": text}
+    if desk and desk_text:
+        desk["data"]["prompt"] = {"type": "inline", "value": desk_text}
     status, _, body = labs("PUT", f"/developer-platform/agents/{agent}/flow",
                            {"baseVersion": flow["version"], "nodes": flow["nodes"], "edges": flow["edges"]})
     if status != 409:

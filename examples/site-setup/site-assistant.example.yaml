@@ -35,11 +35,14 @@ vocabulary:                     # spelled exactly like this, and listened for
 
 # ── Round 2 · What it knows ─────────────────────────────────────────────────────────────────────────────────
 
-# Q5. Where the content is; how often it changes; refresh on publish? [default: refresh on publish]
+# Q5. Where the content is, and a product catalogue; how often it changes; refresh on publish? [default: refresh on publish]
 knowledge:
   source: site-setup/sample-site  # the site's built HTML pages, relative to where the scripts run
   changes: weekly
   refreshOnPublish: true
+catalogue:
+  source: ""                    # the owner's product catalogue (CSV), relative to where the scripts run; empty: none
+  currency: EUR                 # the prices' currency, as an ISO 4217 code
 
 # Q6. Pages it may point to, aliases, home, in-page anchors? (the owner's answer)
 routes:

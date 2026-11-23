@@ -74,9 +74,9 @@ def error_code(answer):
         return None
 
 
-def ask(text, chat_id=None, cancel_after=None, base=None):
-    """POSTs a question and reads the stream: (status, [(seconds, event, data)]). With cancel_after=n it calls
-    /api/cancel once n sentences have arrived."""
+def ask(text, chat_id=None, cancel=False, base=None):
+    """POSTs a question and reads the stream: (status, [(seconds, event, data)]). With cancel=True it calls
+    /api/cancel at the first tool or sentence event: a reply can arrive in one burst, so later is often too late."""
     body = {"text": text, **({"chatId": chat_id} if chat_id else {})}
     req = urllib.request.Request((base or BASE) + "/api/chat", data=json.dumps(body).encode(), method="POST",
                                  headers={"Origin": ORIGIN, "Content-Type": "application/json"})
@@ -86,7 +86,7 @@ def ask(text, chat_id=None, cancel_after=None, base=None):
     except urllib.error.HTTPError as e:
         seen.append(e.read())
         return e.status, []
-    got, event, sentences = [], None, 0
+    got, event = [], None
     for raw in resp:
         seen.append(raw)
         line = raw.decode().rstrip("\r\n")
@@ -95,8 +95,7 @@ def ask(text, chat_id=None, cancel_after=None, base=None):
         elif line.startswith("data:"):
             data = json.loads(line[5:])
             got.append((time.time() - t0, event, data))
-            sentences += event == "sentence"
-            if cancel_after and sentences == cancel_after and event == "sentence":
+            if cancel and event in ("tool", "sentence") and not any(e == "(cancel)" for _, e, _ in got):
                 got.append((time.time() - t0, "(cancel)", json.loads(http("POST", "/api/cancel", {"chatId": got[0][2]["chatId"]}, base=base)[2])))
     return resp.status, got
 
@@ -206,13 +205,13 @@ with urllib.request.urlopen(req, timeout=120) as r:
 note(f"live clip: first byte {ttfb:.2f}s, {len(live)} bytes in {time.time() - t0:.2f}s")
 
 # ── Cancel ───────────────────────────────────────────────────────────────────────────────────────────────────────
-status, ev3 = ask(LONG, chat_id, cancel_after=1)
+status, ev3 = ask(LONG, chat_id, cancel=True)
 cancel_at = next((i for i, (_, e, _) in enumerate(ev3) if e == "(cancel)"), None)
 after = [e for _, e, _ in ev3[cancel_at + 1:]] if cancel_at is not None else []
 streamed = sum(e == "sentence" for _, e, _ in ev3)
-check("cancel", cancel_at is not None and ev3[cancel_at][2] == {"cancelled": True} and set(after) <= {"sentence", "done"}
+check("cancel", cancel_at is not None and ev3[cancel_at][2] == {"cancelled": True} and set(after) <= {"tool", "sentence", "done"}
       and ev3[-1][1:] == ("done", {"cancelled": True}) and ev3[-1][0] - ev3[cancel_at][0] < 1,
-      "after the first sentence: /api/cancel {cancelled: true}, then done {cancelled: true} within a second")
+      "while it answers: /api/cancel {cancelled: true}, then done {cancelled: true} within a second")
 if cancel_at is not None:
     note(f"cancel answered at {ev3[cancel_at][0]:.1f}s, done at {ev3[-1][0]:.1f}s, "
          f"{after.count('sentence')} sentences already on their way, {streamed} streamed in all")

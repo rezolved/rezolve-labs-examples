@@ -83,14 +83,18 @@ if (command === "save") {
   }
 } else if (command === "restore" && file) {
   const snap = JSON.parse(readFileSync(file, "utf8"));
+  const putFlow = async () => labs("PUT", `/developer-platform/agents/${AGENT}/flow`, {
+    baseVersion: (await readFlow()).version, nodes: snap.flow.nodes, edges: snap.flow.edges, meta: snap.flow.meta,
+  });
   // The agent's fields first: a PATCH can itself save a flow version, so the flow goes back last.
   const fields = Object.fromEntries(Object.entries(snap.agent).filter(([, v]) => v !== null));
-  const patched = await labs("PATCH", `/developer-platform/agents/${AGENT}`, fields);
+  let patched = await labs("PATCH", `/developer-platform/agents/${AGENT}`, fields);
+  if (patched.status === 400) { // PATCH checks the current flow: a broken one (a route to a missing step) goes back first
+    await putFlow();
+    patched = await labs("PATCH", `/developer-platform/agents/${AGENT}`, fields);
+  }
   if (patched.status !== 200) fail("Nothing was restored: see the body above.");
-  const current = await readFlow();
-  const res = await labs("PUT", `/developer-platform/agents/${AGENT}/flow`, {
-    baseVersion: current.version, nodes: snap.flow.nodes, edges: snap.flow.edges, meta: snap.flow.meta,
-  });
+  const res = await putFlow();
   if (res.status !== 200) fail("The agent's fields are restored, but the flow is not: see the body above.");
   console.log(`restored: agent fields put back; flow version ${snap.flow.version} saved again as version `
     + `${(await res.json()).data.version}`);
