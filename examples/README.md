@@ -102,6 +102,24 @@ Then open `http://localhost:8040`: the sample site with the assistant on it.
 
 Live calls need your own LiveKit server saved in the workspace once.
 
+### `shop-assistant/`: a personal shopper on a shop's page
+
+| Path | Shows |
+|---|---|
+| `shop.example.yaml`, `instructions.txt` | Your shop's settings and policies (you bring the catalogue), and how its assistant behaves |
+| `setup-shop.py`, `.ts` | The catalogue as a product search collection, the instructions, an agent with a voice and the built-in basket |
+| `server.py`, `server.ts` | Relays chat (reply, product cards, basket), speech and push-to-talk; serves the page |
+| `site/shop.html` | The shop with the assistant: cards, live basket, replies spoken with delivery cues, hold to talk |
+| `check-shop.py` | A 14-turn shopping conversation built from your catalogue, each turn with what should happen |
+
+```bash
+cp shop-assistant/shop.example.yaml shop-assistant/shop.yaml   # fill it in; put your catalogue CSV where it says
+uv run python shop-assistant/setup-shop.py   # or: npx tsx shop-assistant/setup-shop.ts
+uv run python shop-assistant/server.py       # or: npx tsx shop-assistant/server.ts
+```
+
+Then open `http://localhost:8050`. See `shop-assistant/README.md`.
+
 ## From nothing to a talking agent
 
 ```bash

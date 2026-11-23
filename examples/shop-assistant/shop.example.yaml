@@ -1,0 +1,15 @@
+# Your shop. Copy this file to shop.yaml (kept out of git) and fill it in; setup-shop and the servers read shop.yaml.
+storeName: Your Shop
+agentName: Your Shop shopping assistant
+catalogue: my-shop/catalogue.csv  # your catalogue, relative to this folder: see "Your catalogue" in README.md
+currency: pounds                # said aloud after a price, and filled into {currency} in instructions.txt
+currencySymbol: "£"             # shown on the page
+currencyCode: GBP               # stored with each product in the collection
+collection: your_shop           # the product search collection; setup-shop adds the account's prefix
+welcome: "[warmly] Welcome to Your Shop. I'm Alex, your personal shopper. What are you shopping for today?"  # a delivery cue is not spoken
+voiceId: ''                     # empty: the first ready public voice
+policies:                       # filled into {policies}: the only store facts the agent may state. Replace every line.
+- Standard delivery takes three to five working days and costs four pounds ninety-five; it is free on orders over seventy-five pounds.
+- Returns are free within 30 days of delivery, for unworn items with their tags on.
+- We take debit and credit cards at checkout.
+- Customer service is on 0800 000 0000, Monday to Friday, 9 am to 5 pm.

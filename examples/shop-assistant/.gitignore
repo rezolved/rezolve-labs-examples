@@ -1,0 +1,4 @@
+# Your shop: its settings, catalogue and photos stay on your machine.
+shop.yaml
+my-shop/
+*.csv
