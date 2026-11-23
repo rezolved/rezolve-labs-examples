@@ -33,7 +33,7 @@ CONVERSATION = [
     ("Do you price match?", "unless the policies say so: it can't confirm, and points to customer service"),
     ("Can you book me a taxi?", "brief, warm no; steers back to the shop"),
     ("add the thirty h to the bag", "reads back its best guess and asks; nothing added"),
-    (f"Actually, remove the {sized['name']}", "removes it (basket changes) and confirms"),
+    (f"Actually, make that two of the {sized['name']}", "changes the quantity to two (basket changes) and confirms the total"),
     ("That's all, I'd like to check out", "sends the shopper to the basket's Check out button; never claims the order is placed"),
 ]
 

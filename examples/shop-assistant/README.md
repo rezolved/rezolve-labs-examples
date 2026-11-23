@@ -6,7 +6,8 @@ policies, and hands over to checkout. Bring your own catalogue: no product data 
 
 ```bash
 cd examples
-cp shop-assistant/shop.example.yaml shop-assistant/shop.yaml   # then fill it in, and put your catalogue where it says
+cp shop-assistant/shop.example.yaml shop-assistant/shop.yaml   # then fill it in
+mkdir -p shop-assistant/my-shop                                 # your catalogue.csv goes here, pictures in my-shop/img/
 uv run python shop-assistant/setup-shop.py     # or: npx tsx shop-assistant/setup-shop.ts
 uv run python shop-assistant/server.py         # or: npx tsx shop-assistant/server.ts
 ```
@@ -94,8 +95,21 @@ returned. Ask by name ("the Floral Tea Dress") and it finds it.
 ## Change it
 
 Edit the catalogue, `shop.yaml` or `instructions.txt` and run `setup-shop` again. It loads the catalogue again (a
-product already there is updated; one you removed stays until you delete the collection) and saves the
-instructions as a new flow version of the same agent. Test in a new chat (reload the page).
+product already there is updated; one you removed stays until you delete the collection), updates the agent's name,
+store name and voice, and saves the instructions as a new flow version of the same agent. Restart the server, which
+reads `shop.yaml` when it starts, and test in a new chat (reload the page). The assistant's name in the page's
+messages and its suggestion chips are in `site/shop.html`.
 
 The server checks the page's origin and caps input. Before putting it on a public site, add per-visitor limits and
 a credit budget as `site-assistant/` does.
+
+## Clean up
+
+Delete the agent and the collection when you're done, then empty `SHOP_AGENT_ID` and `SHOP_COLLECTION` in `.env`.
+From `examples/`:
+
+```bash
+set -a; . ../.env; set +a; LABS_BASE_URL=${LABS_BASE_URL:-https://api.rezolvelabs.com/api/v1}
+curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE agent -> %{http_code}\n" "$LABS_BASE_URL/developer-platform/agents/$SHOP_AGENT_ID"
+curl -s -o /dev/null --max-time 30 -X DELETE -H "X-API-KEY: $LABS_API_KEY" -A "curl/8" -w "DELETE collection -> %{http_code}\n" "$LABS_BASE_URL/product-discovery/collections/$SHOP_COLLECTION"
+```

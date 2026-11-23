@@ -287,11 +287,12 @@ const HOLDING = ["[warmly] One moment.", "[warmly] Let me have a look.", "[warml
 let lastHolding = -1;
 function holdingLine() { lastHolding = (lastHolding + 1 + Math.floor(Math.random() * (HOLDING.length - 1))) % HOLDING.length; return HOLDING[lastHolding]; }
 
-function speakReply(text) {  // one clip per sentence; a sentence without a cue keeps the one before it
-  let cue = "";
+function speakReply(text) {  // one clip per sentence; a sentence without a cue keeps the one before it, but
+  let cue = "";               // [excited] is for its one sentence only, so the next goes back to [warmly]
   for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
-    cue = /^\[[a-z][a-z ]{0,20}\]/i.exec(sentence)?.[0] ?? cue;
-    speak(sentence.startsWith("[") || !cue ? sentence : `${cue} ${sentence}`);
+    const own = /^\[[a-z][a-z ]{0,20}\]/i.exec(sentence)?.[0];
+    speak(own || !cue ? sentence : `${cue} ${sentence}`);
+    cue = own === "[excited]" ? "[warmly]" : own ?? cue;
   }
 }
 function speak(text) {
