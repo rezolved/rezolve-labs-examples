@@ -119,6 +119,21 @@ def respell(text, pronunciations):
     return text
 
 
+# correct() is copied from speech/speech-sound-alikes.py.
+def correct(text, words, alikes):
+    """The transcript with each word spelled as the owner spells it, matched as whole words in any case."""
+    for word in sorted(words, key=len, reverse=True):
+        forms = [r"[\s-]?".join(map(re.escape, word.replace(" ", ""))),  # "saltmarsh", "salt marsh", "salt-marsh"
+                 *map(re.escape, alikes.get(word) or [])]
+        pattern = re.compile(rf"(?<!\w)(?:{'|'.join(forms)})(?!\w)", re.IGNORECASE)
+
+        def spell(m, word=word):  # a capital only where a sentence starts
+            before = m.string[:m.start()].rstrip()
+            return word[0].upper() + word[1:] if not before or before[-1] in ".!?" else word
+        text = pattern.sub(spell, text)
+    return text
+
+
 # speech_body() and clip_key() are copied from speech/speech-cache-key.py, so a line matches its stored clip.
 SPACES = re.compile("[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+")  # the same set in TS
 

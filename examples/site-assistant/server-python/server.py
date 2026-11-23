@@ -18,7 +18,7 @@ import aiohttp, yaml
 from aiohttp import web
 
 import guard, labs
-from labs import (AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clip_key, events, plain, respell, seal, sentences,
+from labs import (AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clip_key, correct, events, plain, respell, seal, sentences,
                   speech_body, unseal, verdict)
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -26,6 +26,9 @@ ANSWERS = pathlib.Path(os.environ.get("SITE_ANSWERS") or "site-assistant.yaml")
 if not ANSWERS.exists():
     ANSWERS = HERE.parent.parent / "site-setup" / "site-assistant.example.yaml"
 site = yaml.safe_load(ANSWERS.read_text(encoding="utf-8"))
+# What the microphone's transcript is corrected for: the owner's spellings and hard words, and known sound-alikes.
+HEARD = (site.get("vocabulary") or []) + [p["word"] for p in site.get("pronunciations") or []]
+ALIKES = site.get("soundAlikes") or {}
 SITE_DIR = pathlib.Path((site.get("knowledge") or {}).get("source") or "site-setup/sample-site")
 CLIENT = HERE.parent / "client" / "dist"
 CLIPS = pathlib.Path("out/clips")
@@ -152,6 +155,8 @@ def route_for(path):
     base, _, anchor = path.partition("#")
     base = base.rstrip("/") or "/"
     for r in site.get("routes") or []:
+        if "#" in r["path"] and r["path"] == f"{base}#{anchor}":  # a section of a page: "/#finding-us"
+            return {"path": r["path"], "label": r["label"]}
         if r["path"] == base and (not anchor or r.get("anchorsAllowed")):
             return {"path": path if anchor else base, "label": r["label"]}
     print(f"[chat] dropped a link to {path}: not one of the owner's routes")
@@ -391,7 +396,13 @@ async def speech(request):
 
 # ── Listen: live transcription, relayed ──────────────────────────────────────────────────────────────────────────
 
-listening = set()  # visitors with a session open: one each
+listening = {}  # visitor -> their open session: one each
+
+
+def release(who, browser):
+    """Frees the visitor for their next session, unless a newer session already holds it."""
+    if listening.get(who) is browser:
+        del listening[who]
 LISTEN_ERRORS = {"bad_start": "bad_request"}  # Labs' error codes on the socket -> ours; any other is "unavailable"
 
 
@@ -417,11 +428,11 @@ async def listen(request):
         await browser.send_json({"type": "error", **message(refused)})
         await browser.close(code=1008)
         return browser
-    listening.add(who)
+    listening[who] = browser
     try:
         await relay(browser, who)
     finally:
-        listening.discard(who)
+        release(who, browser)
     return browser
 
 
@@ -475,6 +486,8 @@ async def relay(browser, who):
                 if frame.get("type") == "error":  # Labs' own wording stays here; the browser gets ours
                     print(f"[listen] Labs refused: {frame.get('code')} {frame.get('message')}")
                     await browser.send_json({"type": "error", **message(LISTEN_ERRORS.get(frame.get("code"), "unavailable"))})
+                elif frame.get("text"):  # partial and final: the owner's spellings back before the visitor sees them
+                    await browser.send_json({**frame, "text": correct(frame["text"], HEARD, ALIKES)})
                 else:
                     await browser.send_str(msg.data)
 
@@ -483,6 +496,7 @@ async def relay(browser, who):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    release(who, browser)  # free at once: the widget listens again as soon as either side has ended
     if upstream.closed:
         await browser.close(code=closable(upstream.close_code))
     else:
@@ -510,6 +524,8 @@ async def transcript(request):
         await labs_refused(resp)
     out = []
     for t in (await resp.json())["data"]["turns"]:
+        if t.get("role") == "user" and t.get("text", "").startswith("(On screen now"):
+            continue  # a note Labs adds after a search, not something the visitor said
         if t.get("role") == "user" and t.get("text"):
             out.append({"role": "user", "text": t["text"], "link": None})
         elif t.get("role") == "bot" and t.get("text"):  # a bot turn with no text is a tool call: left out

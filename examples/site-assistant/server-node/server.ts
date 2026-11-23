@@ -22,7 +22,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import YAML from "yaml";
 import * as guard from "./guard.ts";
 import {
-  AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clipKey, events, fail, labs, plain, respell, seal, sentences, speechBody,
+  AGENT, FALLBACK, KEY, LIVE, READ_MORE, UA, clipKey, correct, events, fail, labs, plain, respell, seal, sentences, speechBody,
   unseal, verdict, type Code, type SpeechBody,
 } from "./labs.ts";
 
@@ -30,6 +30,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ANSWERS = [process.env.SITE_ANSWERS || "site-assistant.yaml"].find(existsSync)
   ?? join(HERE, "..", "..", "site-setup", "site-assistant.example.yaml");
 const site = YAML.parse(readFileSync(ANSWERS, "utf8"));
+// What the microphone's transcript is corrected for: the owner's spellings and hard words, and known sound-alikes.
+const HEARD: string[] = [...(site.vocabulary ?? []), ...(site.pronunciations ?? []).map((p: { word: string }) => p.word)];
+const ALIKES: Record<string, string[]> = site.soundAlikes ?? {};
 const SITE_DIR: string = site.knowledge?.source || "site-setup/sample-site";
 const CLIENT = join(HERE, "..", "client", "dist");
 const CLIPS = "out/clips";
@@ -127,6 +130,7 @@ function routeFor(path: string): Link | null {
   const [base0, anchor] = [path.split("#")[0], path.includes("#")];
   const base = base0.replace(/\/+$/, "") || "/";
   for (const r of site.routes ?? []) {
+    if (r.path.includes("#") && r.path === base + path.slice(base0.length)) return { path: r.path, label: r.label }; // a section: "/#finding-us"
     if (r.path === base && (!anchor || r.anchorsAllowed)) return { path: anchor ? path : base, label: r.label };
   }
   console.log(`[chat] dropped a link to ${path}: not one of the owner's routes`);
@@ -361,7 +365,9 @@ async function speech(req: IncomingMessage, res: ServerResponse, url: URL, who: 
 
 // ── Listen: live transcription, relayed ──────────────────────────────────────────────────────────────────────────
 
-const listening = new Set<string>(); // visitors with a session open: one each
+const listening = new Map<string, WebSocket>(); // visitor -> their open session: one each
+/** Frees the visitor for their next session, unless a newer session already holds it. */
+const release = (who: string, browser: WebSocket) => { if (listening.get(who) === browser) listening.delete(who); };
 const LISTEN_ERRORS: Record<string, Code> = { bad_start: "bad_request" }; // Labs' codes on the socket -> ours; else "unavailable"
 const closable = (code?: number) => (code && code !== 1005 && code !== 1006 ? code : 1000); // "no code" can't be sent
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
@@ -380,9 +386,13 @@ async function listen(browser: WebSocket, who: string) {
     browser.send(JSON.stringify({ type: "error", ...message(refused) }));
     return browser.close(1008);
   }
-  listening.add(who);
-  browser.once("close", () => listening.delete(who)); // free at once: the widget listens again as soon as its socket closes
-  await relay(browser, who, early, keep);
+  listening.set(who, browser);
+  browser.once("close", () => release(who, browser)); // free at once: the widget listens again as soon as either side has ended
+  try {
+    await relay(browser, who, early, keep);
+  } finally {
+    release(who, browser);
+  }
 }
 
 async function relay(browser: WebSocket, who: string, early: [RawData, boolean][], keep: (d: RawData, b: boolean) => void) {
@@ -440,6 +450,9 @@ async function relay(browser: WebSocket, who: string, early: [RawData, boolean][
   upstream.on("message", (data, binary) => { // Labs -> browser
     if (binary) return;
     const frame = JSON.parse(String(data));
+    if (frame.type !== "error" && frame.text) { // partial and final: the owner's spellings back before the visitor sees them
+      return browser.send(JSON.stringify({ ...frame, text: correct(frame.text, HEARD, ALIKES) }));
+    }
     if (frame.type !== "error") return browser.send(String(data));
     console.log(`[listen] Labs refused: ${frame.code} ${frame.message}`); // Labs' own wording stays here; the browser gets ours
     browser.send(JSON.stringify({ type: "error", ...message(LISTEN_ERRORS[frame.code] ?? "unavailable") }));
@@ -473,6 +486,7 @@ async function transcript(_req: IncomingMessage, res: ServerResponse, url: URL, 
   if (answer.status !== 200) await labsRefused(answer);
   const out: { role: string; text: string; link: Link | null }[] = [];
   for (const t of (await answer.json()).data.turns) {
+    if (t.role === "user" && String(t.text ?? "").startsWith("(On screen now")) continue; // a note Labs adds after a search, not something the visitor said
     if (t.role === "user" && t.text) out.push({ role: "user", text: t.text, link: null });
     else if (t.role === "bot" && t.text) { // a bot turn with no text is a tool call: left out
       const items = sentences(t.text, true)[0].map(tidy).filter((i) => i !== null);

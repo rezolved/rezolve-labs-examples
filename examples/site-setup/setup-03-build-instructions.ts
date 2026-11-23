@@ -58,7 +58,8 @@ function build(site: any): string {
   const contact = site.contact.path;
   const pages = site.followUp.offerNavigation && site.navigation.enabled && site.routes.length > 0;
   const lines = persona.voice === "person"
-    ? [`You are ${persona.name}, speaking in the first person for ${store} on its website.`]
+    ? [`You are ${persona.name}, speaking in the first person for ${store} on its website. `
+      + "The welcome has introduced you: don't introduce yourself again in an answer."]
     : [`You are the website assistant for ${store}. Speak for the business as "we".`];
   lines.push("", "Answer only from the knowledge base and these instructions. If the answer is not there, say you don't "
     + `know and offer the contact page (${contact}).`,
@@ -68,8 +69,12 @@ function build(site: any): string {
     + `${size.textMaxWords} words.`,
   "- Write plain sentences only: no markdown, lists, headings, bold, links or emoji.",
   `- Tone: ${style.tone}. Use ${style.spelling} spelling, ${style.serialComma ? "with" : "without"} the serial comma.`);
-  const spellings = [...style.brandSpellings, ...site.vocabulary];
+  const spellings = [...new Set([...style.brandSpellings, ...site.vocabulary])]; // each once, in order
   if (spellings.length) lines.push(`- Spell these exactly as written: ${spellings.join(", ")}.`);
+  const heard = Object.entries<string[]>(site.soundAlikes ?? {}).flatMap(([word, alikes]) => alikes.map((a) => `read "${a}" as ${word}`));
+  if (heard.length) { // for a transcript that reaches the agent uncorrected (see speech/speech-sound-alikes)
+    lines.push(`- Visitors may speak, so a word can arrive misheard: ${heard.join("; ")}.`);
+  }
   if (site.offLimits.length) {
     lines.push("", "Off limits:", ...site.offLimits.map((t: string) => `- Do not discuss ${t}. Say politely that you can't help with that.`));
   }
