@@ -52,24 +52,39 @@ async function data_of(res: Response | Promise<Response>, what: string): Promise
   return (await answer.json()).data;
 }
 
-/** The whole instructions text, from the answers alone. */
-function build(site: any): string {
+/** The whole instructions text, from the answers alone: the agent's, or with desk=true its product desk's, the
+ * step setup-06 adds for the catalogue. The two differ only in where their answers come from. */
+function build(site: any, desk = false): string {
   const { storeName: store, persona, style, answerStyle: size } = site;
+  const catalogue = site.catalogue ?? {};
   const contact = site.contact.path;
   const pages = site.followUp.offerNavigation && site.navigation.enabled && site.routes.length > 0;
   const lines = persona.voice === "person"
     ? [`You are ${persona.name}, speaking in the first person for ${store} on its website. `
       + "The welcome has introduced you: don't introduce yourself again in an answer."]
     : [`You are the website assistant for ${store}. Speak for the business as "we".`];
-  lines.push("", "Answer only from the knowledge base and these instructions. If the answer is not there, say you don't "
-    + `know and offer the contact page (${contact}).`,
-  "", "How to answer:",
+  if (desk) {
+    lines.push("", `Answer questions about ${store}'s products from the catalogue you search. Name each product exactly `
+      + "as the catalogue does, capitals included. Give "
+      + `prices in ${catalogue.currency} with the currency's symbol, such as £4.50, not its code. Never name a `
+      + `product, price or detail the search didn't return; if nothing fits, say so and offer the contact page `
+      + `(${contact}).`);
+  } else {
+    lines.push("", "Answer only from the knowledge base and these instructions. If the answer is not there, say you "
+      + `don't know and offer the contact page (${contact}).`);
+    if (catalogue.source) { // the catalogue is the product desk's: a step can't search pages and products
+      lines.push("For any question about a product, its price or what we sell, call transfer_to_product_desk and "
+        + "say nothing yourself.");
+    }
+  }
+  lines.push("", "How to answer:",
   `- Your answers are read aloud. Use at most ${size.spokenMaxWords} words in ${size.spokenMaxSentences} `
     + `sentence${size.spokenMaxSentences === 1 ? "" : "s"}. If the visitor asks for more detail, use up to `
     + `${size.textMaxWords} words.`,
   "- Write plain sentences only: no markdown, lists, headings, bold, links or emoji.",
   `- Tone: ${style.tone}. Use ${style.spelling} spelling, ${style.serialComma ? "with" : "without"} the serial comma.`);
-  const spellings = [...new Set([...style.brandSpellings, ...site.vocabulary])]; // each once, in order
+  // each once, in order; the desk names products as the catalogue spells them, so it keeps the brand's only
+  const spellings = [...new Set([...style.brandSpellings, ...(desk ? [] : site.vocabulary)])];
   if (spellings.length) lines.push(`- Spell these exactly as written: ${spellings.join(", ")}.`);
   const heard = Object.entries<string[]>(site.soundAlikes ?? {}).flatMap(([word, alikes]) => alikes.map((a) => `read "${a}" as ${word}`));
   if (heard.length) { // for a transcript that reaches the agent uncorrected (see speech/speech-sound-alikes)
@@ -97,14 +112,17 @@ function build(site: any): string {
 
 const site = YAML.parse(readFileSync(ANSWERS, "utf8"));
 const instructions = build(site);
-const length = [...instructions].length; // characters, as the limit counts them (not UTF-16 units)
+const deskText = site.catalogue?.source ? build(site, true) : null;
+const chars = (s: string) => [...s].length; // characters, as the limit counts them (not UTF-16 units)
+const length = Math.max(chars(instructions), chars(deskText ?? ""));
 console.log(`answers:  ${relative(process.cwd(), ANSWERS)}`);
-console.log(`built:    ${length} characters (limit ${LIMIT})`);
+console.log(`built:    ${chars(instructions)} characters (limit ${LIMIT})` + (deskText ? `; the product desk ${chars(deskText)}` : ""));
 if (length > LIMIT) {
   fail(`Too long by ${length - LIMIT} characters: shorten the answers, or move facts into the knowledge base (setup-04).`);
 }
 if (process.argv.includes("--dry-run")) {
   process.stdout.write("\n" + instructions);
+  if (deskText) process.stdout.write("\n--- the product desk ---\n" + deskText);
   process.exit(0);
 }
 
@@ -114,11 +132,14 @@ for (const attempt of [1, 2]) { // a 409 means someone saved since we read: read
   const flow = await data_of(labs("GET", `/developer-platform/agents/${agent}/flow`), "Could not read the agent's flow");
   if (!flow.nodes.length) fail("This agent has no flow yet: create it with instructions (setup-02).");
   const entry = flow.nodes.find((n: any) => n.type === "initial") ?? flow.nodes[0];
-  if (entry.data.prompt.value === instructions) {
+  const desk = flow.nodes.find((n: any) => n.data.product_search_collection);
+  if (deskText && !desk) console.log("note:     no product desk yet: run setup-06-catalogue, then this again");
+  if (entry.data.prompt.value === instructions && (!desk || !deskText || desk.data.prompt.value === deskText)) {
     console.log(`unchanged: flow version ${flow.version} already has these instructions`);
     process.exit(0);
   }
   entry.data.prompt = { type: "inline", value: instructions };
+  if (desk && deskText) desk.data.prompt = { type: "inline", value: deskText };
   res = await labs("PUT", `/developer-platform/agents/${agent}/flow`, { baseVersion: flow.version, nodes: flow.nodes, edges: flow.edges });
   if (res.status !== 409 || attempt === 2) break;
 }
