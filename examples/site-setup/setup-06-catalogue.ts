@@ -4,10 +4,12 @@
  * A catalogue goes in a product search collection, never in the knowledge base, and one step of an agent searches a
  * knowledge base or a collection, not both. So the site's pages stay with the agent's first step (setup-04), and the
  * catalogue goes to a second step, the product desk, which the first hands product questions to with
- * `transfer_to_product_desk`. This loads `catalogue.source` (Q5), a CSV with at least `id`, `name` and `price`
- * columns, into the collection in LABS_COLLECTION (made the first time, with the account's prefix, and saved to .env),
- * waits until it is searchable, then adds the product desk to the agent's flow, or points the one it has at the
- * collection. setup-03 writes both steps' instructions: run it after this one.
+ * `transfer_to_product_desk`. This sends `catalogue.source` (Q5), a CSV with at least `id`, `name` and `price`
+ * columns, through catalogue enrichment (unless `catalogue.enrich` is false), which works out each product's category
+ * path, tags and keywords; loads the rows, with those added, into the collection in LABS_COLLECTION (made the first
+ * time, with the account's prefix, and saved to .env); waits until it is searchable, then adds the product desk to the
+ * agent's flow, or points the one it has at the collection. setup-03 writes both steps' instructions: run it after this
+ * one.
  *
  * Run: npx tsx site-setup/setup-06-catalogue.ts
  */
@@ -29,30 +31,43 @@ const ANSWERS = existsSync("site-assistant.yaml")
   ? "site-assistant.yaml" : join(dirname(fileURLToPath(import.meta.url)), "site-assistant.example.yaml");
 const REQUIRED = ["id", "name", "price"]; // every other column is stored with the product, and searched by meaning
 const DESK = "product_desk";
+const ENRICH = "/product-discovery";
+const AIDS = ["taxonomy_path", "search_tags", "keywords"]; // what enrichment adds that the products keep and are searched by
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
 }
 
-/** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. */
+/** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. A read that
+ * answers 5xx is tried again, twice: progress and result reads have answered a passing 503. */
 async function labs(method: string, path: string, body?: unknown): Promise<Response> {
-  const res = await fetch(API + path, {
-    method,
-    headers: { "X-API-KEY": KEY, "Content-Type": "application/json", "User-Agent": UA },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let line = `[labs] ${method} ${path} -> ${res.status} credits=${res.headers.get("X-Credits-Charged") ?? "-"}`;
-  if (!res.ok) line += " body=" + (await res.clone().text()).slice(0, 300).replace(/\n/g, " ");
-  console.log(line);
-  return res;
+  const form = body instanceof FormData; // fetch writes the multipart Content-Type, with its boundary
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(API + path, {
+      method,
+      headers: { "X-API-KEY": KEY, "User-Agent": UA, ...(form ? {} : { "Content-Type": "application/json" }) },
+      body: form ? body : body === undefined ? undefined : JSON.stringify(body),
+    });
+    let line = `[labs] ${method} ${path} -> ${res.status} credits=${res.headers.get("X-Credits-Charged") ?? "-"}`;
+    if (!res.ok) line += " body=" + (await res.clone().text()).slice(0, 300).replace(/\n/g, " ");
+    console.log(line);
+    if (method !== "GET" || res.status < 500 || attempt === 3) return res;
+    await sleep(5000);
+  }
 }
 
-/** The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why). */
-async function data_of(res: Response | Promise<Response>, what: string): Promise<any> {
+/** The JSON of a successful answer. If the call failed, stops with `what` (the log line above says why). */
+async function json_of(res: Response | Promise<Response>, what: string): Promise<any> {
   const answer = await res;
   if (!answer.ok) fail(`${what}: see the body above.`);
-  return (await answer.json()).data;
+  return answer.json();
+}
+
+/** The `data` of a successful answer (the enrichment and ingest answers are not wrapped in `data`). */
+async function data_of(res: Response | Promise<Response>, what: string): Promise<any> {
+  return (await json_of(res, what)).data;
 }
 
 /** Sets NAME=value in .env, replacing the line if there is one. */
@@ -97,11 +112,40 @@ function product(r: Record<string, string>) {
   return p;
 }
 
-const products = rows.map(product);
-const searched = ["title", ...columns.filter((c) => ![...REQUIRED, "image_url"].includes(c))];
-console.log(`catalogue: ${products.length} products from ${catalogue.source}, searched by ${searched.join(", ")}`);
+/** The catalogue through enrichment: returns each product's category path, tags and keywords, by its id. Only
+ * those are kept: enrichment also lowercases names, and fills in facts such as allergens by guessing. */
+async function enrich(): Promise<Record<string, Record<string, string>>> {
+  const session = (await json_of(labs("POST", `${ENRICH}/pipeline/init`, {}), "Enrichment did not start")).session_id;
+  const form = new FormData();
+  form.append("file", new Blob([readFileSync(catalogue.source)], { type: "text/csv" }), "catalogue.csv");
+  await json_of(labs("POST", `${ENRICH}/pipeline/${session}/upload`, form), "The catalogue was not taken");
+  const found = await json_of(labs("POST", `${ENRICH}/schema/detect`, { session_id: session }), "Its columns were not worked out");
+  console.log(`enrich:   a ${found.detection.vertical} catalogue, product ids from \`${found.unique_identifier.source_column}\``);
+  await json_of(labs("POST", `${ENRICH}/schema/confirm`, { session_id: session }), "The columns were not confirmed");
+  await json_of(labs("POST", `${ENRICH}/enrichment/start`, { session_id: session }), "Enrichment did not start");
+  let job: any;
+  for (;;) { // `interrupted` is not the end: it can still complete
+    job = await json_of(labs("GET", `${ENRICH}/enrichment/${session}/status`), "Could not read the enrichment");
+    if (["enrichment_completed", "failed", "cancelled"].includes(job.status)) break;
+    await sleep(10000);
+  }
+  if (job.status !== "enrichment_completed") fail(`Enrichment ended ${job.status}: ${job.error}. Run again, or set catalogue.enrich to false.`);
+  const table = await labs("GET", `${ENRICH}/pipeline/${session}/result`); // the enriched table, as CSV
+  if (!table.ok) fail("Could not read the enriched catalogue: see the body above.");
+  const enriched = csv(await table.text());
+  await labs("DELETE", `${ENRICH}/pipeline/${session}`); // the session keeps a copy of the catalogue until deleted
+  const text = (value: string) => value.startsWith("[") ? JSON.parse(value).join(", ") : value; // '["a","b"]' as "a, b"
+  return Object.fromEntries(enriched.map((r) => [r.product_id, Object.fromEntries(AIDS.filter((k) => r[k]).map((k) => [k, text(r[k])]))]));
+}
 
-// 1. The collection: its name needs the account's prefix, which the first refusal names
+// 1. Enrichment, unless the owner turned it off: about a minute, and 15 credits a product on every run
+const aids = catalogue.enrich === false ? {} : await enrich();
+const products = rows.map((r) => ({ ...product(r), ...aids[r.id] }));
+const searched = ["title", ...columns.filter((c) => ![...REQUIRED, "image_url"].includes(c)), ...(Object.keys(aids).length ? AIDS : [])];
+console.log(`catalogue: ${products.length} products from ${catalogue.source}, ${rows.filter((r) => r.id in aids).length} enriched, `
+  + `searched by ${searched.join(", ")}`);
+
+// 2. The collection: its name needs the account's prefix, which the first refusal names
 let collection: string = process.env.LABS_COLLECTION
   || site.storeName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") + "_catalogue";
 let res: Response;
@@ -126,7 +170,7 @@ for (;;) {
 if (state.status !== "completed") fail(`The ingest ended ${state.status}; the collection holds what it held before.`);
 console.log(`ready:    ${collection}, searchable after ${Math.round((Date.now() - started) / 1000)} s (LABS_COLLECTION in .env)`);
 
-// 2. The product desk: a second step on the collection, which the first step hands product questions to
+// 3. The product desk: a second step on the collection, which the first step hands product questions to
 for (const attempt of [1, 2]) { // a 409 means someone saved since we read: read again and reapply
   const flow = await data_of(labs("GET", `/developer-platform/agents/${AGENT}/flow`), "Could not read the agent's flow");
   const entry = flow.nodes.find((n: any) => n.type === "initial") ?? flow.nodes[0];

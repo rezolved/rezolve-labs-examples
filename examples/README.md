@@ -50,7 +50,7 @@ when it fails.
 | `setup-03-build-instructions` | Builds the instructions from the answers and saves them (`--dry-run` to read first) | a flow version |
 | `setup-04-knowledge` | Uploads the site's pages with their addresses; refreshes on publish | `LABS_KB_ID`, `out/knowledge.csv` |
 | `setup-05-snapshot-restore` | `save`, `list`, `restore <file>`: roll back a change | `snapshots/` |
-| `setup-06-catalogue` | Loads the owner's catalogue (`catalogue.source`) into a product search collection and adds a product desk the agent hands product questions to; run `setup-03` after it | `LABS_COLLECTION` |
+| `setup-06-catalogue` | Enriches the owner's catalogue (`catalogue.source`; off with `catalogue.enrich: false`), loads it into a product search collection and adds a product desk the agent hands product questions to; run `setup-03` after it | `LABS_COLLECTION` |
 | `setup-07-photos` | Indexes the catalogue's photos (its `image_url` column) so the server takes a photo with a question; with a photo as its argument, shows the products it finds and their scores; run `setup-03` after it | `LABS_PHOTO_INDEX` |
 
 Without a `site-assistant.yaml` in `examples/`, the setup scripts use `site-setup/site-assistant.example.yaml`
@@ -109,7 +109,7 @@ Live calls need your own LiveKit server saved in the workspace once.
 | Path | Shows |
 |---|---|
 | `shop.example.yaml`, `instructions.txt` | Your shop's settings and policies (you bring the catalogue), and how its assistant behaves |
-| `setup-shop.py`, `.ts` | The catalogue as a product search collection, the instructions, an agent with a voice and the built-in basket |
+| `setup-shop.py`, `.ts` | The catalogue, enriched, as a product search collection, the instructions, an agent with a voice and the built-in basket |
 | `server.py`, `server.ts` | Relays chat (reply, product cards, basket), speech and push-to-talk; serves the page |
 | `site/shop.html` | The shop with the assistant: cards, live basket, replies spoken with delivery cues, hold to talk |
 | `check-shop.py` | A 14-turn shopping conversation built from your catalogue, each turn with what should happen |

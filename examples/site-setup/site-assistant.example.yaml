@@ -43,6 +43,7 @@ knowledge:
 catalogue:
   source: ""                    # the owner's product catalogue (CSV), relative to where the scripts run; empty: none
   currency: EUR                 # the prices' currency, as an ISO 4217 code
+  enrich: true                  # add each product's category path, tags and keywords; 15 credits a product per run
   photoMinScore: 0.7            # a photo's closest products are named only above this score (setup-07 shows scores)
 
 # Q6. Pages it may point to, aliases, home, in-page anchors? (the owner's answer)

@@ -6,6 +6,7 @@ currency: pounds                # said aloud after a price, and filled into {cur
 currencySymbol: "£"             # shown on the page
 currencyCode: GBP               # stored with each product in the collection
 collection: your_shop           # the product search collection; setup-shop adds the account's prefix
+enrich: true                    # add each product's category path, tags and keywords; 15 credits a product per run
 welcome: "[warmly] Welcome to Your Shop. I'm Alex, your personal shopper. What are you shopping for today?"  # a delivery cue is not spoken
 voiceId: ''                     # empty: the first ready public voice
 policies:                       # filled into {policies}: the only store facts the agent may state. Replace every line.
