@@ -1,15 +1,17 @@
 /**
  * shop-assistant · Set up the shop's agent: catalogue, instructions and basket.
  *
- * Loads your catalogue (the CSV that shop.yaml names, with at least `id`, `name` and `price` columns) into a product
- * search collection (a catalogue never goes in a knowledge base: those are for documents), builds the instructions
+ * Sends your catalogue (the CSV that shop.yaml names, with at least `id`, `name` and `price` columns) through catalogue
+ * enrichment (unless `enrich` is false in shop.yaml), which works out each product's category path, tags and keywords,
+ * and loads the rows, with those added, into a product search collection (a catalogue never goes in a knowledge base:
+ * those are for documents). Builds the instructions
  * from instructions.txt and shop.yaml (store name, currency, store policies), and
  * creates an agent on that collection with a voice and the built-in `modify_cart` tool. No shop needs connecting: the
  * basket lives on the platform, one per chat. The collection's full name and the agent's id go into .env as
  * SHOP_COLLECTION and SHOP_AGENT_ID.
  *
- * Run it again after changing the catalogue, shop.yaml or instructions.txt: it loads the catalogue again (a product
- * whose id is already there is updated) and saves the new instructions as a new flow version of the same agent. Test
+ * Run it again after changing the catalogue, shop.yaml or instructions.txt: it enriches and loads the catalogue again
+ * (a product whose id is already there is updated) and saves the new instructions as a new flow version of the same agent. Test
  * each change in a new chat. A product taken out of the catalogue stays in the collection: delete the collection to
  * start clean.
  *
@@ -33,6 +35,9 @@ const LIMIT = 20000; // characters of instructions, on create and on a flow save
 const TOOLS = ["modify_cart"]; // built-in basket; the catalogue search comes with the collection. Not checkout: see the README
 const REQUIRED = ["id", "name", "price"]; // every other column is stored with the product, and searched by meaning
 const NOT_SEARCHED = ["image_url", "sizes"];
+const ENRICH = "/product-discovery";
+const AIDS = ["taxonomy_path", "search_tags", "keywords"]; // what enrichment adds that the products keep and are searched by
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 if (!existsSync(join(HERE, "shop.yaml"))) fail("Copy shop-assistant/shop.example.yaml to shop-assistant/shop.yaml and fill in your shop.");
 const shop = YAML.parse(readFileSync(join(HERE, "shop.yaml"), "utf8"));
@@ -43,25 +48,34 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-/** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. */
+/** One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. A read that
+ * answers 5xx is tried again, twice: progress and result reads have answered a passing 503. */
 async function labs(method: string, path: string, body?: unknown): Promise<Response> {
   const form = body instanceof FormData; // fetch writes the multipart Content-Type, with its boundary
-  const res = await fetch(API + path, {
-    method,
-    headers: { "X-API-KEY": KEY, "User-Agent": UA, ...(form ? {} : { "Content-Type": "application/json" }) },
-    body: form ? body : body === undefined ? undefined : JSON.stringify(body),
-  });
-  let line = `[labs] ${method} ${path} -> ${res.status} credits=${res.headers.get("X-Credits-Charged") ?? "-"}`;
-  if (!res.ok) line += " body=" + (await res.clone().text()).slice(0, 300).replace(/\n/g, " ");
-  console.log(line);
-  return res;
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(API + path, {
+      method,
+      headers: { "X-API-KEY": KEY, "User-Agent": UA, ...(form ? {} : { "Content-Type": "application/json" }) },
+      body: form ? body : body === undefined ? undefined : JSON.stringify(body),
+    });
+    let line = `[labs] ${method} ${path} -> ${res.status} credits=${res.headers.get("X-Credits-Charged") ?? "-"}`;
+    if (!res.ok) line += " body=" + (await res.clone().text()).slice(0, 300).replace(/\n/g, " ");
+    console.log(line);
+    if (method !== "GET" || res.status < 500 || attempt === 3) return res;
+    await sleep(5000);
+  }
 }
 
-/** The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why). */
-async function data_of(res: Response | Promise<Response>, what: string): Promise<any> {
+/** The JSON of a successful answer. If the call failed, stops with `what` (the log line above says why). */
+async function json_of(res: Response | Promise<Response>, what: string): Promise<any> {
   const answer = await res;
   if (!answer.ok) fail(`${what}: see the body above.`);
-  return (await answer.json()).data;
+  return answer.json();
+}
+
+/** The `data` of a successful answer (the enrichment and ingest answers are not wrapped in `data`). */
+async function data_of(res: Response | Promise<Response>, what: string): Promise<any> {
+  return (await json_of(res, what)).data;
 }
 
 /** Sets NAME=value in .env, replacing the line if there is one. */
@@ -119,8 +133,36 @@ function product(r: Record<string, string>) {
   return p;
 }
 
-const products = rows.map(product);
-const SEARCHED = ["title", ...columns.filter((c) => !REQUIRED.includes(c) && !NOT_SEARCHED.includes(c))];
+/** The catalogue through enrichment: returns each product's category path, tags and keywords, by its id. Only
+ * those are kept: enrichment also lowercases names, and fills in facts such as allergens by guessing. */
+async function enrich(): Promise<Record<string, Record<string, string>>> {
+  const session = (await json_of(labs("POST", `${ENRICH}/pipeline/init`, {}), "Enrichment did not start")).session_id;
+  const form = new FormData();
+  form.append("file", new Blob([readFileSync(CATALOGUE)], { type: "text/csv" }), "catalogue.csv");
+  await json_of(labs("POST", `${ENRICH}/pipeline/${session}/upload`, form), "The catalogue was not taken");
+  const found = await json_of(labs("POST", `${ENRICH}/schema/detect`, { session_id: session }), "Its columns were not worked out");
+  console.log(`enrich:   a ${found.detection.vertical} catalogue, product ids from \`${found.unique_identifier.source_column}\``);
+  await json_of(labs("POST", `${ENRICH}/schema/confirm`, { session_id: session }), "The columns were not confirmed");
+  await json_of(labs("POST", `${ENRICH}/enrichment/start`, { session_id: session }), "Enrichment did not start");
+  let job: any;
+  for (;;) { // `interrupted` is not the end: it can still complete
+    job = await json_of(labs("GET", `${ENRICH}/enrichment/${session}/status`), "Could not read the enrichment");
+    if (["enrichment_completed", "failed", "cancelled"].includes(job.status)) break;
+    await sleep(10000);
+  }
+  if (job.status !== "enrichment_completed") fail(`Enrichment ended ${job.status}: ${job.error}. Run again, or set enrich to false in shop.yaml.`);
+  const table = await labs("GET", `${ENRICH}/pipeline/${session}/result`); // the enriched table, as CSV
+  if (!table.ok) fail("Could not read the enriched catalogue: see the body above.");
+  const enriched = csv(await table.text());
+  await labs("DELETE", `${ENRICH}/pipeline/${session}`); // the session keeps a copy of the catalogue until deleted
+  const text = (value: string) => value.startsWith("[") ? JSON.parse(value).join(", ") : value; // '["a","b"]' as "a, b"
+  return Object.fromEntries(enriched.map((r) => [r.product_id, Object.fromEntries(AIDS.filter((k) => r[k]).map((k) => [k, text(r[k])]))]));
+}
+
+// Enrichment, unless shop.yaml turns it off: about a minute, and 15 credits a product on every run
+const aids = shop.enrich === false ? {} : await enrich();
+const products = rows.map((r) => ({ ...product(r), ...aids[r.id] }));
+const SEARCHED = ["title", ...columns.filter((c) => !REQUIRED.includes(c) && !NOT_SEARCHED.includes(c)), ...(Object.keys(aids).length ? AIDS : [])];
 let collection: string = process.env.SHOP_COLLECTION || shop.collection;
 let answer: Response;
 for (;;) {
@@ -141,7 +183,8 @@ for (;;) { // the ingest answers are not wrapped in `data`
   await new Promise((r) => setTimeout(r, 3000));
 }
 if (state.status !== "completed") fail(`The ingest ended ${state.status}; the collection holds what it held before.`);
-console.log(`catalogue: ${collection}, ${products.length} products searchable after ${Math.round((Date.now() - started) / 1000)} s`);
+console.log(`catalogue: ${collection}, ${products.length} products (${rows.filter((r) => r.id in aids).length} enriched) `
+  + `searchable after ${Math.round((Date.now() - started) / 1000)} s`);
 
 // 2. The agent: created once, then each run saves the instructions as a new flow version.
 let agent = process.env.SHOP_AGENT_ID;

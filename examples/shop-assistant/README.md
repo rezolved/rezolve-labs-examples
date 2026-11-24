@@ -19,7 +19,7 @@ Then open `http://localhost:8050`. Allow sound with your first click; hold the m
 | `shop.example.yaml` | Copy to `shop.yaml`: the shop's name, where its catalogue is, currency, welcome line and policies |
 | your catalogue | A CSV of your products (see below); `shop.yaml`, the catalogue and its pictures stay out of git |
 | `instructions.txt` | How the agent behaves; `{store}`, `{currency}` and `{policies}` are filled in from `shop.yaml` |
-| `setup-shop.py`, `.ts` | Loads the catalogue into a product search collection, builds the instructions, creates the agent; run again after any change |
+| `setup-shop.py`, `.ts` | Enriches the catalogue and loads it into a product search collection, builds the instructions, creates the agent; run again after any change |
 | `server.py`, `.ts` | Holds the key and relays chat, cards, basket, speech and push-to-talk for the page |
 | `site/shop.html` | The page: the shop, the assistant, the basket |
 | `check-shop.py` | A 14-turn shopping conversation built from your catalogue, each turn with what should happen |
@@ -45,6 +45,10 @@ SKU-101,Linen Midi Dress,89,Dresses,Sage,XS S M L XL,"Sleeveless midi dress in w
   policies). Each row becomes a product with its id, title, price and currency, and the descriptive columns are
   searched by meaning. The collection's name starts with your account's prefix; setup finds it for you. Keep prices
   as plain numbers and put the currency in `shop.yaml`.
+- **Enrichment first.** Setup sends the CSV through catalogue enrichment, which works out each product's category
+  path, tags and keywords, and adds those three to the product so it is found by what it is, not only by your words.
+  Nothing else from enrichment is kept: it lowercases names and guesses facts the catalogue doesn't give. It takes
+  about a minute and costs 15 credits a product on every run; `enrich: false` in `shop.yaml` loads the rows as they are.
 - **Cards.** The platform searches on every turn, even "hi", and sends a card for every hit. The server keeps only
   the cards the reply names, and the instructions tell the agent that only products it names are shown. So a
   greeting shows nothing, and three recommendations show three cards. Each card's "Add to cart" button sends its
@@ -89,15 +93,16 @@ Run `uv run python shop-assistant/check-shop.py` with a server up to see all of 
 your catalogue (14 chat messages, 10 credits each). It prints each reply with its cues and counts the replies that open with one.
 
 **Known issue.** On a small collection, product search doesn't always rank by the query yet: a search for "dress"
-can return shirts and jeans first. The agent then says it has no dresses, because it only names what the search
+can return shirts and jeans first. Enrichment helps only a little: asked for "a dress for a summer wedding", the agent
+offered one dress and missed the Floral Tea Dress listed for summer weddings, because it only names what the search
 returned. Ask by name ("the Floral Tea Dress") and it finds it.
 
 ## Change it
 
-Edit the catalogue, `shop.yaml` or `instructions.txt` and run `setup-shop` again. It loads the catalogue again (a
-product already there is updated; one you removed stays until you delete the collection), updates the agent's name,
-store name and voice, and saves the instructions as a new flow version of the same agent. Restart the server, which
-reads `shop.yaml` when it starts, and test in a new chat (reload the page). The assistant's name in the page's
+Edit the catalogue, `shop.yaml` or `instructions.txt` and run `setup-shop` again. It enriches and loads the catalogue
+again (a product already there is updated; one you removed stays until you delete the collection), updates the agent's
+name, store name and voice, and saves the instructions as a new flow version of the same agent. Restart the server,
+which reads `shop.yaml` when it starts, and test in a new chat (reload the page). The assistant's name in the page's
 messages and its suggestion chips are in `site/shop.html`.
 
 The server checks the page's origin and caps input. Before putting it on a public site, add per-visitor limits and

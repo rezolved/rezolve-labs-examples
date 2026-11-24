@@ -1,20 +1,22 @@
 """shop-assistant · Set up the shop's agent: catalogue, instructions and basket.
 
-Loads your catalogue (the CSV that shop.yaml names, with at least `id`, `name` and `price` columns) into a product
-search collection (a catalogue never goes in a knowledge base: those are for documents), builds the instructions
+Sends your catalogue (the CSV that shop.yaml names, with at least `id`, `name` and `price` columns) through catalogue
+enrichment (unless `enrich` is false in shop.yaml), which works out each product's category path, tags and keywords,
+and loads the rows, with those added, into a product search collection (a catalogue never goes in a knowledge base:
+those are for documents). Builds the instructions
 from instructions.txt and shop.yaml (store name, currency, store policies), and
 creates an agent on that collection with a voice and the built-in `modify_cart` tool. No shop needs connecting: the
 basket lives on the platform, one per chat. The collection's full name and the agent's id go into .env as
 SHOP_COLLECTION and SHOP_AGENT_ID.
 
-Run it again after changing the catalogue, shop.yaml or instructions.txt: it loads the catalogue again (a product
-whose id is already there is updated) and saves the new instructions as a new flow version of the same agent. Test
+Run it again after changing the catalogue, shop.yaml or instructions.txt: it enriches and loads the catalogue again
+(a product whose id is already there is updated) and saves the new instructions as a new flow version of the same agent. Test
 each change in a new chat. A product taken out of the catalogue stays in the collection: delete the collection to
 start clean.
 
 Run, from examples/: uv run python shop-assistant/setup-shop.py [--dry-run]   (--dry-run prints the instructions only)
 """
-import csv, json, os, pathlib, sys, time, urllib.error, urllib.request
+import csv, io, json, os, pathlib, sys, time, urllib.error, urllib.request, uuid
 import yaml
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -31,6 +33,8 @@ LIMIT = 20000  # characters of instructions, on create and on a flow save alike
 TOOLS = ["modify_cart"]  # built-in basket; the catalogue search comes with the collection. Not checkout: see the README
 REQUIRED = ("id", "name", "price")  # every other column is stored with the product, and searched by meaning
 NOT_SEARCHED = {"image_url", "sizes"}
+ENRICH = "/product-discovery"
+AIDS = ("taxonomy_path", "search_tags", "keywords")  # what enrichment adds that the products keep and are searched by
 
 if not (HERE / "shop.yaml").exists():
     sys.exit("Copy shop-assistant/shop.example.yaml to shop-assistant/shop.yaml and fill in your shop.")
@@ -39,26 +43,35 @@ CATALOGUE = HERE / shop["catalogue"]
 
 
 def labs(method, path, body=None, content_type="application/json"):
-    """One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors."""
+    """One Labs call, logged: method, path, status, X-Credits-Charged, and a body preview on errors. A read that
+    answers 5xx is tried again, twice: progress and result reads have answered a passing 503."""
     data = body if isinstance(body, bytes) or body is None else json.dumps(body).encode()
-    req = urllib.request.Request(API + path, method=method, data=data,
-                                 headers={"X-API-KEY": KEY, "Content-Type": content_type, "User-Agent": UA})
-    try:
-        resp = urllib.request.urlopen(req, timeout=120)
-    except urllib.error.HTTPError as e:
-        resp = e
-    out = resp.read()
-    print(f"[labs] {method} {path} -> {resp.status} credits={resp.headers.get('X-Credits-Charged', '-')}"
-          + ("" if resp.status < 400 else " body=" + out.decode(errors="replace")[:300].replace("\n", " ")))
-    return resp.status, out
+    for attempt in (1, 2, 3):
+        req = urllib.request.Request(API + path, method=method, data=data,
+                                     headers={"X-API-KEY": KEY, "Content-Type": content_type, "User-Agent": UA})
+        try:
+            resp = urllib.request.urlopen(req, timeout=120)
+        except urllib.error.HTTPError as e:
+            resp = e
+        out = resp.read()
+        print(f"[labs] {method} {path} -> {resp.status} credits={resp.headers.get('X-Credits-Charged', '-')}"
+              + ("" if resp.status < 400 else " body=" + out.decode(errors="replace")[:300].replace("\n", " ")))
+        if method != "GET" or resp.status < 500 or attempt == 3:
+            return resp.status, out
+        time.sleep(5)
 
 
-def data_of(answer, what):
-    """The `data` of a successful answer. If the call failed, stops with `what` (the log line above says why)."""
+def json_of(answer, what):
+    """The JSON of a successful answer. If the call failed, stops with `what` (the log line above says why)."""
     status, body = answer
     if status >= 300:
         sys.exit(f"{what}: see the body above.")
-    return json.loads(body)["data"]
+    return json.loads(body)
+
+
+def data_of(answer, what):
+    """The `data` of a successful answer (the enrichment and ingest answers are not wrapped in `data`)."""
+    return json_of(answer, what)["data"]
 
 
 def set_env(name, value):
@@ -102,8 +115,38 @@ def product(r):
     return p
 
 
-products = [product(r) for r in rows]
-SEARCHED = ["title"] + [c for c in columns if c not in REQUIRED and c not in NOT_SEARCHED]
+def enrich():
+    """The catalogue through enrichment: returns each product's category path, tags and keywords, by its id. Only
+    those are kept: enrichment also lowercases names, and fills in facts such as allergens by guessing."""
+    session = json_of(labs("POST", f"{ENRICH}/pipeline/init", {}), "Enrichment did not start")["session_id"]
+    boundary = uuid.uuid4().hex
+    form = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="catalogue.csv"\r\n'
+            "Content-Type: text/csv\r\n\r\n").encode() + CATALOGUE.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    json_of(labs("POST", f"{ENRICH}/pipeline/{session}/upload", form, f"multipart/form-data; boundary={boundary}"),
+            "The catalogue was not taken")
+    found = json_of(labs("POST", f"{ENRICH}/schema/detect", {"session_id": session}), "Its columns were not worked out")
+    print(f"enrich:   a {found['detection']['vertical']} catalogue, product ids from `{found['unique_identifier']['source_column']}`")
+    json_of(labs("POST", f"{ENRICH}/schema/confirm", {"session_id": session}), "The columns were not confirmed")
+    json_of(labs("POST", f"{ENRICH}/enrichment/start", {"session_id": session}), "Enrichment did not start")
+    while (job := json_of(labs("GET", f"{ENRICH}/enrichment/{session}/status"), "Could not read the enrichment"))["status"] \
+            not in ("enrichment_completed", "failed", "cancelled"):  # `interrupted` is not the end: it can still complete
+        time.sleep(10)
+    if job["status"] != "enrichment_completed":
+        sys.exit(f"Enrichment ended {job['status']}: {job.get('error')}. Run again, or set enrich to false in shop.yaml.")
+    status, table = labs("GET", f"{ENRICH}/pipeline/{session}/result")  # the enriched table, as CSV
+    if status >= 300:
+        sys.exit("Could not read the enriched catalogue: see the body above.")
+    labs("DELETE", f"{ENRICH}/pipeline/{session}")  # the session keeps a copy of the catalogue until deleted
+
+    def text(value):  # a list such as '["linen","summer"]' as plain text
+        return ", ".join(json.loads(value)) if value.startswith("[") else value
+    return {r["product_id"]: {k: text(r[k]) for k in AIDS if r.get(k)} for r in csv.DictReader(io.StringIO(table.decode()))}
+
+
+# Enrichment, unless shop.yaml turns it off: about a minute, and 15 credits a product on every run
+aids = enrich() if shop.get("enrich", True) else {}
+products = [{**product(r), **aids.get(r["id"], {})} for r in rows]
+SEARCHED = ["title"] + [c for c in columns if c not in REQUIRED and c not in NOT_SEARCHED] + (list(AIDS) if aids else [])
 collection = os.environ.get("SHOP_COLLECTION") or shop["collection"]
 while True:
     status, body = labs("POST", "/developer-platform/vector/ingest",
@@ -126,7 +169,8 @@ while True:  # the ingest answers are not wrapped in `data`
     time.sleep(3)
 if state["status"] != "completed":
     sys.exit(f"The ingest ended {state['status']}; the collection holds what it held before.")
-print(f"catalogue: {collection}, {len(products)} products searchable after {time.time() - started:.0f} s")
+print(f"catalogue: {collection}, {len(products)} products ({sum(r['id'] in aids for r in rows)} enriched) "
+      f"searchable after {time.time() - started:.0f} s")
 
 # 2. The agent: created once, then each run saves the instructions as a new flow version.
 agent = os.environ.get("SHOP_AGENT_ID")
